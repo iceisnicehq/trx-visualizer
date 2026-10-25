@@ -199,7 +199,11 @@ export class FlowCanvas{
     c.restore();this.nodes.push({address,x,y,radius:40,frameIndex:index});
   }
   drawTransition(index,now,progress){
-    const s=this.state,f=s.frames[index],row=this.tree.rows[index];if(f.boundary||index===0)return;
+    const s=this.state,f=s.frames[index],row=this.tree.rows[index];if(index===0)return;
+    if(f.boundary){
+      if(f.period.continuity==='CARRIED'&&!s.replayAt(index).issue)for(const w of this.tree.wallets)this.holding(s.replayAt(index).after,w.address,{x:this.tree.columns.get(w.address),y:row.previousY+43},{x:this.tree.columns.get(w.address),y:row.y-42},{alpha:s.owner?.65:.18});
+      return;
+    }
     const before=s.replayAt(index),stock=new Map(before.before),tracked=new Set(f.period.initial.map(a=>a.ownerAddress));
     const positions=new Map(this.tree.wallets.map(w=>[w.address,{x:this.tree.columns.get(w.address),y:row.previousY+43}]));
     const bandStart=row.previousY+132,bandEnd=row.y-52,slot=(bandEnd-bandStart)/Math.max(1,f.events.length);
@@ -238,7 +242,7 @@ export class FlowCanvas{
     for(const w of this.tree.wallets){const x=this.tree.columns.get(w.address)*this.camera.scale+this.camera.x;if(x<95||x>this.width+50)continue;
       this.label(w.label+' · '+w.address.slice(-3),x,20,10,'#9eafcc','center',true);}
     for(const row of this.tree.rows){const y=row.y*this.camera.scale+this.camera.y;if(y<45||y>this.height+70)continue;
-      const f=s.frames[row.index];this.label(f.boundary?'START':f.label.length>14?f.label.slice(0,14):f.label,12,y-7,10,row.index===s.index?'#a4ebd1':'#9eabc3','left',true);
+      const f=s.frames[row.index];this.label(f.boundary?(f.period.continuity==='CARRIED'?'CARRIED':'START'):f.label.length>14?f.label.slice(0,14):f.label,12,y-7,10,row.index===s.index?'#a4ebd1':'#9eabc3','left',true);
       this.label(f.period.label.slice(0,14),12,y+11,8,'#7285a4','left',true);if(f.forecast)this.label('FORECAST',12,y+29,7,'#b49bd6','left',true);
     }
     c.restore();

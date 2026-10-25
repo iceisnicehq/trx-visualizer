@@ -1,4 +1,24 @@
-# TRX Flow Atlas · release 34
+# TRX Flow Atlas · release 35
+
+## Original ownership across legacy and plan boundaries · release 35
+
+The former export used independent accounting periods. A native-balance rebalance could leave every wallet holding 1 TRX while its reconstructed original shares belonged to other participants. Starting a plan then relabelled each wallet’s balance as its own stake. That is appropriate for a separate plan ledger, but it breaks the claim that a single diagram follows the original stake through the entire game.
+
+The default **Ownership → Original stakes · continuous** view now bridges that boundary. Legacy transfers consume incoming lots FIFO. At each new plan, the preceding exact original-owner composition is assigned to that plan’s recorded packet labels. Each saved plan transfer retains its native amount, route, sequence and nominal allocation routing; original lots inside each recorded plan share are consumed FIFO. The plan’s graph and CSV therefore follow the actual preceding accounting composition rather than creating a new original 1 TRX at the owner’s address. Every calculation uses integer Sun, including the old fractional amounts.
+
+The boundary is marked **CARRIED**. Hiding “Before the plans” or selecting only one plan does not erase its starting composition. **Recorded plan ledger · compare** preserves the former per-plan view. Saving the public snapshot in continuous mode includes both corrected allocations and the original recorded allocations, so the calculation is reversible and idempotent. CSV includes accounting_mode / accounting_method and the corrected baselines. A personal CSV preserves that one stake, but cannot certify a whole-pool restoration. A continuous CSV alone cannot recreate the original per-plan comparison view; keep the JSON for that comparison.
+
+Confirmed and projected movements are replayed in immutable sequence. If forecast dates go backwards, their calendar grouping respects the preceding step’s effective date; the original timestamps are retained in the transaction details. A missing transfer, partial coverage, an insufficient saved packet or a boundary balance mismatch stops later original-owner attribution. It never invents a replacement starting stake. An unfinished preceding plan cannot be bridged into a confirmed new plan.
+
+**Check original stakes** shows each participant’s confirmed positions and provides an owner-specific restoration **preview only**. It does not send transactions or change the mixer. The direct routes require explicit ownership allocations; executing the list as ordinary unannotated FIFO transfers can give a different ownership result. Ordinary Rebalance restores native wallet totals, and may do nothing when they are already 1 TRX. The preview is blocked by partial data, pending transactions, missing participant stakes or a stake already paid to the teacher. Preserve personal extra Sun and the mixer’s approval and live zero-fee checks before any separately approved transfer.
+
+To audit a complete public export offline:
+
+```bash
+node scripts/analyse-provenance.mjs /path/to/public-export.json /path/to/audit-output
+```
+
+The script creates a corrected Flow JSON, exact positions and proposed routes, personal/everyone CSV and an optional Flow JSON containing additional **DRAFT** return routes. DRAFT dates are illustrative, not an execution schedule. It reads only the supplied file and never contacts TRON. Keep the audit output outside public/ and do not overwrite the mixer database. Upload only the snapshot you intend all visitors to see. Extra on-chain transfers absent from the export require a new complete journal; original coin identities cannot be recovered from an explorer because TRX is account-based and fungible.
 
 A separate public visualizer for the original 1 TRX stakes. Visitors can explore the shared history and download CSV without signing in. Publishing a replacement JSON snapshot requires a dedicated password, checked by the server on every upload.
 

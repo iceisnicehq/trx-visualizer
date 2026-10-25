@@ -1,14 +1,14 @@
 import {SUN,normaliseDataset} from './model.js';
 const fields=['row_type','period_id','period_label','period_type','period_status','coverage','network','holder_address','owner_address','initial_amount_sun','wallet_ordinal','wallet_label','wallet_role',
   'transfer_id','sequence','campaign_day','kind','status','planned_utc','scheduled_utc','confirmed_utc','recorded_confirmation_utc','from_address','to_address','native_amount_sun','native_amount_trx',
-  'stake_owner_address','owner_amount_sun','owner_amount_trx','packet_ownership','attribution_basis','tx_id','bandwidth_whole_transaction','export_scope'];
+  'stake_owner_address','owner_amount_sun','owner_amount_trx','packet_ownership','attribution_basis','tx_id','bandwidth_whole_transaction','export_scope','accounting_mode','accounting_method'];
 const cell=v=>{let s=v==null?'':String(v);if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
 /** Personal CSV follows the original stake through peer holders. Packet sums
  * remain whole native amounts; they are never multiplied by owner count. */
 export function journeyCsv(raw,{owner=null,confirmedOnly=false}={}){
   const data=normaliseDataset(raw),rows=[],exportScope=owner?'PERSONAL_STAKE':'ALL_STAKES';
   if(owner&&!data.periods.some(p=>p.initial.some(a=>a.ownerAddress===owner)))throw Error('Choose a participant whose stake is included in this snapshot.');
-  const row=values=>rows.push({...values,export_scope:exportScope});
+  const row=values=>rows.push({...values,export_scope:exportScope,accounting_mode:data.accounting?.mode??'RECORDED',accounting_method:data.accounting?.method??'PER_PERIOD_LEDGER'});
   for(const w of data.wallets)row({row_type:'WALLET',holder_address:w.address,wallet_ordinal:w.ordinal,wallet_label:w.label,wallet_role:w.role,network:data.network});
   for(const p of data.periods){
     const initial=p.initial.filter(a=>!owner||a.ownerAddress===owner);if(!initial.length)continue;

@@ -13,6 +13,7 @@ export const shortAddress=address=>address.length>18?address.slice(0,6)+'…'+ad
 export const moscowDay=at=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at));
 export const timeOf=t=>t.status==='CONFIRMED'?(t.confirmedAt??t.recordedAt??t.scheduledAt):t.scheduledAt;
 const shareKey=(holder,owner)=>holder+'\0'+owner;
+const attribution=v=>['FIFO','UNKNOWN','BRIDGED_FIFO'].includes(v)?v:'RECORDED';
 
 /** Allow-listed public data only. Reject wallet-config files before displaying
  * anything; all amounts stay integer Sun. No RPC or wallet signing occurs. */
@@ -37,9 +38,14 @@ export function normaliseDataset(raw){
     });
     const totals=new Map();for(const v of initial)totals.set(v.ownerAddress,(totals.get(v.ownerAddress)??0)+v.amountSun);
     if([...totals.values()].some(v=>v!==SUN))fail('Each tracked stake must start with exactly 1 TRX per accounting period.');
+    if(p.recordedInitial!=null&&(!Array.isArray(p.recordedInitial)||p.recordedInitial.length>10_000))fail('Invalid recorded starting allocations.');
+    const recordedInitial=p.recordedInitial==null?null:p.recordedInitial.map(v=>({holderAddress:check(v.holderAddress),ownerAddress:check(v.ownerAddress),amountSun:integer(v.amountSun,'Recorded starting allocation',1)}));
+    if(recordedInitial&&(recordedInitial.length>10_000||new Set(recordedInitial.map(v=>shareKey(v.holderAddress,v.ownerAddress))).size!==recordedInitial.length))fail('Invalid recorded starting allocations.');
     return {id,label:string(p.label,'Plan',100),type:p.type==='LEGACY'?'LEGACY':'SMART',status:string(p.status,'EXPORTED',40),
       startedAt:date(p.startedAt),deadlineAt:date(p.deadlineAt),coverage:p.coverage==='PARTIAL'?'PARTIAL':'COMPLETE',
-      initial,warnings:Array.isArray(p.warnings)?p.warnings.map(v=>string(v,'',500)).slice(0,30):[]};
+      initial,warnings:Array.isArray(p.warnings)?p.warnings.map(v=>string(v,'',500)).slice(0,30):[],
+      ...(recordedInitial?{recordedInitial}:{}),...(p.recordedCoverage?{recordedCoverage:p.recordedCoverage==='PARTIAL'?'PARTIAL':'COMPLETE'}:{}),...(p.continuity?{continuity:string(p.continuity,'',30)}:{}),
+      ...(p.provenanceIssue?{provenanceIssue:string(p.provenanceIssue,'',500)}:{})};
   });
   const periodIds=new Set(periods.map(p=>p.id));if(periodIds.size!==periods.length)fail('Duplicate accounting periods.');
   const seenIds=new Set(),seenSequence=new Set();
@@ -58,9 +64,15 @@ export function normaliseDataset(raw){
     const allocated=allocations.reduce((n,a)=>n+a.amountSun,0),period=periods.find(p=>p.id===periodId);
     if(allocated>amountSun||allocated!==amountSun&&period.coverage!=='PARTIAL'&&t.attribution!=='UNKNOWN')fail(`Shares do not add up to native transfer #${sequence}.`);
     const scheduledAt=date(t.scheduledAt,false),confirmedAt=date(t.confirmedAt),recordedAt=date(t.recordedAt),plannedAt=date(t.plannedAt);
+    let recordedAllocations;
+    if(t.recordedAllocations!=null){
+      if(!Array.isArray(t.recordedAllocations)||t.recordedAllocations.length>100)fail('Invalid recorded packet ownership.');
+      recordedAllocations=t.recordedAllocations.map(a=>({ownerAddress:check(a.ownerAddress),amountSun:integer(a.amountSun,'Recorded share',1)}));
+      if(new Set(recordedAllocations.map(a=>a.ownerAddress)).size!==recordedAllocations.length||recordedAllocations.reduce((n,a)=>n+a.amountSun,0)>amountSun)fail('Invalid recorded packet ownership.');
+    }
     return {id,periodId,sequence,kind:t.kind,status:t.status,from,to,amountSun,allocations,scheduledAt,confirmedAt,recordedAt,plannedAt,
       campaignDay:t.campaignDay==null?null:integer(t.campaignDay,'Algorithm round'),
-      attribution:t.attribution==='FIFO'?'FIFO':t.attribution==='UNKNOWN'?'UNKNOWN':'RECORDED',
+      attribution:attribution(t.attribution),...(recordedAllocations?{recordedAllocations,recordedAttribution:attribution(t.recordedAttribution)}:{}),
       txId:typeof t.txId==='string'&&/^[A-Za-z0-9_-]{1,150}$/.test(t.txId)?t.txId:null,
       bandwidthUsed:t.bandwidthUsed==null?null:integer(t.bandwidthUsed,'Bandwidth')};
   });
@@ -68,7 +80,9 @@ export function normaliseDataset(raw){
   const sourceCoverage=coverage?{includesLegacy:coverage.includesLegacy===true,recordedConfirmed:integer(coverage.recordedConfirmed,'Recorded history count'),
     exportedConfirmed:integer(coverage.exportedConfirmed,'Exported history count'),legacyConfirmed:integer(coverage.legacyConfirmed,'Legacy history count'),exportedLegacy:integer(coverage.exportedLegacy,'Exported legacy count')}:null;
   return {format:'trx-flow-atlas',version:1,title:string(raw.title,'TRX Flow Atlas',100),network:string(raw.network,'TRON',30),sourceCoverage,
-    demo:raw.demo===true,createdAt:date(raw.createdAt)??new Date().toISOString(),wallets,periods,transactions,warnings};
+    demo:raw.demo===true,createdAt:date(raw.createdAt)??new Date().toISOString(),wallets,periods,transactions,warnings,
+    ...(raw.accounting?.mode==='CONTINUOUS'?{accounting:{mode:'CONTINUOUS',method:string(raw.accounting.method,'PACKET_FIFO_V1',60),
+      complete:raw.accounting.complete===true,issues:Array.isArray(raw.accounting.issues)?raw.accounting.issues.map(v=>string(v,'',500)).slice(0,200):[]}}:{})};
 }
 
 /** RFC 4180 quotes, escaped quotes, embedded newlines, CRLF and UTF-8 BOM. */
@@ -102,7 +116,7 @@ function parsePacket(value){
   });
 }
 export function datasetFromCsv(files){
-  const wallets=new Map(),periods=new Map(),movements=new Map();let network='CSV import';
+  const wallets=new Map(),periods=new Map(),movements=new Map();let network='CSV import',accountingMode=null;
   const addWallet=(a,ordinal,role)=>{
     if(!a)return;address(a);
     if(!wallets.has(a))wallets.set(a,{address:a,ordinal:ordinal??wallets.size,label:role==='teacher'?'Teacher':`Node ${(ordinal??wallets.size)+1}`,role:role??'participant'});
@@ -112,6 +126,7 @@ export function datasetFromCsv(files){
   for(const file of files){
     const rows=parseCsv(file.text);const number=/node[-_ ]?(\d+)/i.exec(file.name??'');
     for(const row of rows){
+      if(row.accounting_mode){if(accountingMode&&accountingMode!==row.accounting_mode)fail('Do not combine CSV files from different accounting modes.');accountingMode=row.accounting_mode;}
       if(row.status==='CANCELLED')continue;
       if(row.row_type==='WALLET'){
         const a=row.holder_address,ordinal=Number(row.wallet_ordinal);addWallet(a,Number.isSafeInteger(ordinal)&&ordinal>=0?ordinal:undefined,row.wallet_role);
@@ -143,7 +158,7 @@ export function datasetFromCsv(files){
       const t={id:row.transfer_id||row.tx_id||`csv-${periods.size}-${sequence}`,periodId,sequence,kind:row.kind,status:row.status,from,to,amountSun,allocations,
         campaignDay:row.campaign_day?Number(row.campaign_day):null,scheduledAt:row.scheduled_utc||row.confirmed_utc||row.recorded_confirmation_utc,
         plannedAt:row.planned_utc||null,confirmedAt:row.confirmed_utc||null,recordedAt:row.recorded_confirmation_utc||null,
-        attribution:row.attribution_basis==='RECONSTRUCTED'||row.attribution_method==='FIFO'?'FIFO':row.attribution_basis==='UNKNOWN'?'UNKNOWN':'RECORDED',
+        attribution:row.attribution_basis==='BRIDGED_FIFO'?'BRIDGED_FIFO':row.attribution_basis==='RECONSTRUCTED'||row.attribution_method==='FIFO'?'FIFO':row.attribution_basis==='UNKNOWN'?'UNKNOWN':'RECORDED',
         txId:row.tx_id||null,bandwidthUsed:row.bandwidth_whole_transaction?Number(row.bandwidth_whole_transaction):null};
       const previous=movements.get(key);
       if(previous){
@@ -159,8 +174,10 @@ export function datasetFromCsv(files){
     p.initial=[...p.owners].map(ownerAddress=>({holderAddress:ownerAddress,ownerAddress,amountSun:SUN}));
     p.warnings.push('Personal CSV reports provide partial coverage. A 1 TRX starting stake is assumed for each supplied report owner; omitted movements cannot be reconstructed. Use Download all flows for a complete snapshot.');
   }
+  if(accountingMode==='CONTINUOUS')for(const [i,p] of [...periods.values()].entries())p.continuity=i?'CARRIED':'ORIGIN';
   return normaliseDataset({format:'trx-flow-atlas',version:1,network,wallets:[...wallets.values()],periods:[...periods.values()],transactions:[...movements.values()],
-    warnings:[...periods.values()].some(p=>!p.explicit)?['Partial CSV import: the all-wallet balance is not a complete on-chain snapshot.']:[]});
+    warnings:[...periods.values()].some(p=>!p.explicit)?['Partial CSV import: the all-wallet balance is not a complete on-chain snapshot.']:[],
+    ...(accountingMode==='CONTINUOUS'?{accounting:{mode:'CONTINUOUS',method:'PACKET_FIFO_V1',complete:[...periods.values()].every(p=>p.explicit&&p.coverage==='COMPLETE'),issues:[]}}:{})});
 }
 
 /** A frame is a day or a transaction. Accounting boundaries are explicit;
@@ -171,14 +188,16 @@ export function buildFrames(data,{scope='all',legacy=true,axis='calendar',granul
     if(status==='confirmed'&&p.status==='DRAFT')continue;
     const events=data.transactions.filter(t=>t.periodId===p.id&&(status!=='confirmed'||t.status==='CONFIRMED'));
     events.sort((a,b)=>{
+      if(data.accounting?.mode==='CONTINUOUS')return a.sequence-b.sequence;
       if(a.status==='CONFIRMED'&&b.status!=='CONFIRMED')return -1;if(b.status==='CONFIRMED'&&a.status!=='CONFIRMED')return 1;
       return axis==='calendar'?Date.parse(timeOf(a))-Date.parse(timeOf(b))||a.sequence-b.sequence:a.sequence-b.sequence;
     });
     const base=frames.length;
     frames.push({period:p,boundary:true,label:p.label+' · starting stake',events:[],forecast:false,periodStart:base});
-    const grouped=new Map();
+    const grouped=new Map();let effectiveTime=-Infinity;
     for(const t of events){
-      const day=axis==='round'&&p.type!=='LEGACY'?`Round ${t.campaignDay??0}`:moscowDay(timeOf(t));
+      effectiveTime=data.accounting?.mode==='CONTINUOUS'?Math.max(effectiveTime,Date.parse(timeOf(t))):Date.parse(timeOf(t));
+      const day=axis==='round'&&p.type!=='LEGACY'?`Round ${t.campaignDay??0}`:moscowDay(effectiveTime);
       const key=granularity==='transaction'?t.id:day;
       if(!grouped.has(key))grouped.set(key,{period:p,boundary:false,label:granularity==='transaction'?`#${t.sequence} · ${day}`:day,events:[],forecast:false,periodStart:base});
       const f=grouped.get(key);f.events.push(t);if(t.status!=='CONFIRMED')f.forecast=true;
@@ -208,7 +227,7 @@ export function createReplay(frames){
   return index=>{
     if(!frames[index])return {before:new Map(),after:new Map(),issue:null};
     const first=frames[index].periodStart,tracked=new Set(frames[index].period.initial.map(p=>p.ownerAddress));
-    let from=first,state=initialState(frames[index].period),issue=null;
+    let from=first,state=initialState(frames[index].period),issue=frames[index].period.provenanceIssue??null;
     for(const [at,c] of cache)if(at>=first&&at<index&&at>=from){from=at+1;state=new Map(c.after);issue=c.issue;}
     let before=new Map(state);
     for(let i=from;i<=index;i++){

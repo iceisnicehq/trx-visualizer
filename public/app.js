@@ -1,6 +1,7 @@
 import {COLOURS,SUN,normaliseDataset,datasetFromCsv,buildFrames,createReplay,composition,ownerPositions,visibleTransactions,formatSun,shortAddress,timeOf} from './model.js';
 import {FlowCanvas} from './canvas.js';
 import {journeyCsv} from './exports.js';
+import {continuousDataset,recordedDataset,restorationPreview} from './provenance.js';
 import {readPublicJson,readSnapshot,publishSnapshot,acceptPublishedSnapshot,parseSnapshotFile} from './transport.js';
 const $=id=>document.getElementById(id),element=(tag,className,text)=>{const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=String(text);return el;};
 const params=new URLSearchParams(location.hash.slice(1));
@@ -46,7 +47,11 @@ function build(keep=false){
   $('timeline-slider').max=String(Math.max(0,state.frames.length-1));renderOwners();updateFrame();
 }
 function load(raw,source){
-  const data=normaliseDataset(raw);pause();state.data=data;state.wallets=new Map(data.wallets.map(w=>[w.address,w]));
+  const sourceData=normaliseDataset(raw);state.sourceData=sourceData;state.continuousData=continuousDataset(sourceData);
+  try{state.recordedData=recordedDataset(sourceData);}catch{state.recordedData=null;}
+  state.accounting=params.get('accounting')==='recorded'&&state.recordedData?'recorded':'continuous';
+  const data=state.accounting==='continuous'?state.continuousData:state.recordedData;pause();state.data=data;state.wallets=new Map(data.wallets.map(w=>[w.address,w]));
+  $('accounting-select').value=state.accounting;$('accounting-select').querySelector('option[value="recorded"]').disabled=!state.recordedData;
   state.owner=params.get('owner')&&state.wallets.has(params.get('owner'))?params.get('owner'):null;
   state.scope=data.periods.some(p=>p.id===params.get('scope'))?params.get('scope'):'all';
   state.legacy=params.get('legacy')!=='0';$('legacy-toggle').checked=state.legacy;
@@ -74,7 +79,8 @@ function updateFrame(){
   const f=state.frames[state.index];syncCanvas();
   $('canvas-empty').hidden=Boolean(f);$('play-button').disabled=!state.frames.length;
   $('timeline-slider').value=String(state.index);$('previous-frame').disabled=state.index<=0;$('next-frame').disabled=state.index>=state.frames.length-1;
-  $('canvas-kicker').textContent=state.owner?'FOLLOWING THE ORIGINAL 1 TRX':'EVERYONE TOGETHER';
+  $('canvas-kicker').textContent=state.owner?(state.accounting==='continuous'?'FOLLOWING THE ORIGINAL 1 TRX':'COMPARING PER-PLAN OWNERSHIP'):'EVERYONE TOGETHER';
+  $('accounting-note').textContent=state.accounting==='continuous'?'Original stakes carry across plan boundaries. FIFO within saved plan packets is a declared accounting rule. Individual Sun have no owner label on TRON. Personal extra Sun is excluded.':'Comparison view: colours follow each plan’s recorded ledger, which can reset ownership at a boundary. Choose Original stakes · continuous to follow the earlier portions.';
   $('canvas-title').textContent=state.owner?name(state.owner)+' · across every wallet':state.view==='network'?'The shared network':'Day by day · time flows downward';
   $('workspace').classList.toggle('tree-mode',state.view==='timeline');
   $('workspace').classList.toggle('inspect-open',Boolean(state.owner||state.selectedWallet||state.selectedTransfer));
@@ -84,7 +90,7 @@ function updateFrame(){
   $('timeline-start').textContent=state.frames[0]?.period.label??'Start';$('timeline-end').textContent=state.frames.at(-1)?.label??'End';
   $('timeline-progress').textContent=state.frames.length?`${state.index+1} / ${state.frames.length} ${state.granularity==='day'?'day frames':'steps'}`:'';
   const events=f?visibleTransactions(f,state.owner):[],native=events.reduce((n,t)=>n+t.amountSun,0),own=events.reduce((n,t)=>n+t.allocations.filter(a=>a.ownerAddress===state.owner).reduce((v,a)=>v+a.amountSun,0),0);
-  $('frame-summary').textContent=f?.boundary?'A new accounting period · the same stake is reused, no transfer is implied':`${events.length} native transfers · ${formatSun(native,6)} TRX moved${state.owner?' · '+formatSun(own,6)+' TRX of this stake moved':''}`;
+  $('frame-summary').textContent=f?.boundary?(state.accounting==='continuous'&&f.period.continuity==='CARRIED'?'Original ownership carried forward · no transfer or ownership reset at this boundary':'Starting allocation · no transfer is implied'): `${events.length} native transfers · ${formatSun(native,6)} TRX moved${state.owner?' · '+formatSun(own,6)+' TRX of this stake moved':''}`;
   const warnings=[...(state.data.warnings??[]).filter(w=>!w.startsWith('Ownership colours')&&!w.startsWith('Forecast dates')),...(f?.period.warnings??[]),...(state.replay.issue?[state.replay.issue]:[])];
   if(f?.period.coverage==='PARTIAL')warnings.unshift('Partial ownership history. Balances cover only the supplied stakes and valid recorded steps.');
   $('notice').hidden=!warnings.length;$('notice').textContent=[...new Set(warnings)].join(' ');$('notice').classList.toggle('error',Boolean(state.replay.issue));
@@ -94,7 +100,7 @@ function renderActivity(){
   const f=state.frames[state.index],events=f?visibleTransactions(f,state.owner):[],list=$('activity-list');list.replaceChildren();
   $('activity-title').textContent=f?.boundary?'The same 1 TRX. A new chapter.':state.owner?name(state.owner)+'’s share, on the move':'One day. Many paths.';
   $('activity-count').textContent=events.length+' transfers';
-  if(!events.length){list.append(element('div','empty-activity',f?.boundary?'Each participant starts this accounting period with their own 1 TRX. A plan boundary is not a transfer.':'No movement of the selected stake in this frame. Choose another day or Everyone together.'));return;}
+  if(!events.length){list.append(element('div','empty-activity',f?.boundary?(f.period.continuity==='CARRIED'?'This plan starts with the preceding period’s exact ownership composition. The same wallet may be holding other participants’ shares. No ownership is reset.':'The supplied starting allocation is shown here. A plan boundary is not a transfer.'):'No movement of the selected stake in this frame. Choose another day or Everyone together.'));return;}
   for(const t of events){
     const card=element('button','transfer-card'+(state.selectedTransfer===t.id?' active':''));
     const top=element('span','card-top');top.append(element('span','',`#${t.sequence} · ${t.kind}`),element('span','',t.status));
@@ -125,6 +131,7 @@ function renderDetail(){
     container.append(element('div','detail-address',selected.from+' → '+selected.to));
     const at=new Date(timeOf(selected)).toLocaleString('en-GB',{timeZone:'Europe/Moscow',hour12:false});
     container.append(element('p','detail-meta',`${selected.status==='CONFIRMED'?'Recorded':'Forecast'}: ${at} MSK${selected.bandwidthUsed!==null?' · '+selected.bandwidthUsed+' Bandwidth for the whole transaction':''}. Attribution: ${selected.attribution}.`));
+    if(selected.attribution==='BRIDGED_FIFO')container.append(element('p','detail-note','Original-owner composition is carried through the saved plan packet. FIFO selects original lots within each recorded plan share; the plan’s transfer route and native amount are unchanged.'));
     if(selected.txId){
       const text=element('p','detail-meta','TX '+selected.txId);container.append(text);
       if(/^[a-fA-F0-9]{64}$/.test(selected.txId)&&state.data.network==='mainnet'){const a=element('a','detail-note','View on TRONSCAN ↗');a.href='https://tronscan.org/#/transaction/'+selected.txId;a.target='_blank';a.rel='noopener noreferrer';container.append(a);}
@@ -210,7 +217,7 @@ $('save-image').addEventListener('click',()=>{$('flow-canvas').toBlob(blob=>{if(
 $('download-data').addEventListener('click',()=>{if(state.data)download('dataset.json',new Blob([JSON.stringify(state.data,null,2)],{type:'application/json'}));});
 $('help-button').addEventListener('click',()=>$('help-dialog').showModal());$('close-help').addEventListener('click',()=>$('help-dialog').close());
 $('copy-link').addEventListener('click',async()=>{
-  const q=new URLSearchParams({view:state.view,frame:String(state.index),scope:state.scope,legacy:state.legacy?'1':'0',axis:state.axis,granularity:state.granularity,status:state.status});if(state.owner)q.set('owner',state.owner);
+  const q=new URLSearchParams({view:state.view,frame:String(state.index),scope:state.scope,legacy:state.legacy?'1':'0',axis:state.axis,granularity:state.granularity,status:state.status,accounting:state.accounting});if(state.owner)q.set('owner',state.owner);
   const url=new URL(location.href);url.hash=q.toString();
   try{await navigator.clipboard.writeText(url.href);toast('Shared view link copied. Visitors open the saved public snapshot.');}catch{toast('Copy is unavailable. Your current view is saved in the address bar.');}
   history.replaceState(null,'',url);
@@ -287,6 +294,20 @@ function saveCsv(owner){
 }
 $('download-personal-csv').addEventListener('click',()=>saveCsv(state.owner??state.selectedWallet));
 $('download-all-csv').addEventListener('click',()=>saveCsv(null));
+$('accounting-select').addEventListener('change',e=>{
+  state.accounting=e.target.value;state.data=state.accounting==='recorded'?state.recordedData:state.continuousData;
+  if(!state.data)return;state.selectedWallet=null;build(true);toast(state.accounting==='continuous'?'Following original stakes across all boundaries.':'Comparing the original per-plan ledger; ownership may reset between periods.');
+});
+let ownershipPreview=null;
+$('ownership-check').addEventListener('click',()=>{
+  if(!state.continuousData)return;pause();ownershipPreview=restorationPreview(state.continuousData);
+  const report=ownershipPreview,list=$('ownership-results');list.replaceChildren();
+  $('ownership-summary').textContent=report.ready?`${report.basedOn.confirmedTransfers} confirmed transfers · ${report.transactionCount} direct ownership-return routes · ${formatSun(report.foreignSun,6)} TRX away from its attributed original owner.`:report.blocked.join(' ');
+  for(const w of report.wallets){const row=element('div','ownership-row');row.append(element('strong','',w.label+' · '+w.address.slice(-3)),element('span','',formatSun(w.ownAtHomeSun,6)+' / 1 TRX at home'),element('small','',w.positions.map(p=>name(p.holderAddress)+': '+formatSun(p.amountSun,6)+' TRX').join(' · ')));list.append(row);}
+  $('download-restoration').disabled=!report.ready;$('ownership-dialog').showModal();
+});
+$('close-ownership').addEventListener('click',()=>$('ownership-dialog').close());
+$('download-restoration').addEventListener('click',()=>{if(ownershipPreview?.ready)download('trx-ownership-restoration-preview.json',new Blob([JSON.stringify(ownershipPreview,null,2)],{type:'application/json'}));});
 $('latest-confirmed').addEventListener('click',()=>{const i=state.frames.findLastIndex(f=>f.events.some(t=>t.status==='CONFIRMED'));chooseFrame(Math.max(0,i));});
 for(const event of ['dragover','drop'])document.addEventListener(event,e=>{e.preventDefault();if(event==='drop')toast('Use Admin upload to publish a JSON snapshot.');});
 document.addEventListener('keydown',e=>{

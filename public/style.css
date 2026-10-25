@@ -4,3 +4,12 @@
 
 #atlas-stage.expanded{position:fixed;inset:0;z-index:1000;width:100vw}body.atlas-expanded{overflow:hidden}
 .csv-toolbar{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:0 0 13px;font-size:10px;color:#8fa3bf}.csv-toolbar>div{display:flex;gap:8px}.csv-toolbar button{color:#b8e8d7;border-color:#3e5c54;background:#1c302c}.workspace.tree-mode:not(.inspect-open){grid-template-columns:190px minmax(0,1fr)}.workspace.tree-mode:not(.inspect-open) .detail-panel{display:none}.publish-field{display:flex;flex-direction:column;gap:8px;margin:18px 0;color:#b8c8de;font-size:12px}.publish-field input{background:#10192a;border:1px solid #45566d;border-radius:8px;color:#d8e5f5;padding:12px;min-width:0}.publish-error{color:#f1a5b4;font-size:12px;line-height:1.6}#publish-dialog small{display:block;color:#8a9cb7;font-size:10px;line-height:1.7;margin-top:18px}#publish-dialog .import-button{width:100%;justify-content:center;margin-top:15px}.wallet-history{display:flex;flex-direction:column;gap:7px;margin-top:12px}.history-transfer{text-align:left;display:flex;flex-direction:column;gap:6px;font-size:9px}.history-transfer strong{font-size:9px;font-weight:500;color:#c2e5d8}.history-transfer span{color:#acbbd0}.history-transfer small{color:#7d90ae;font-size:8px}.history-choice{display:flex;gap:5px}.history-choice button{padding:6px 8px;font-size:9px}.history-choice button.active{border-color:#7fbba7;background:#244037}@media(max-width:930px){.workspace.tree-mode:not(.inspect-open){grid-template-columns:160px minmax(0,1fr)}.csv-toolbar{align-items:flex-start;flex-direction:column;gap:10px}.detail-panel{max-height:500px}}@media(max-width:620px){.workspace.tree-mode:not(.inspect-open){display:block}.top-actions{gap:6px}.top-actions .import-button{font-size:9px}.csv-toolbar>div{width:100%;flex-wrap:wrap}}
+
+.accounting-control {display:inline-flex;align-items:center;gap:8px;font-size:11px;color:var(--muted,#a8b8d4)}
+.accounting-control select {background:#1a2334;color:#e8eef9;border:1px solid #3a4963;border-radius:7px;padding:8px;max-width:245px}
+.csv-toolbar>div {flex-wrap:wrap}
+#ownership-dialog {width:min(690px,calc(100vw - 32px))}
+#ownership-results {max-height:45vh;overflow:auto;margin:20px 0;border-top:1px solid #3a4963}
+.ownership-row {display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:13px 0;border-bottom:1px solid #3a4963;font-size:12px}
+.ownership-row small {grid-column:1/-1;color:#a8b8d4;line-height:1.6}
+@media(max-width:700px){.accounting-control {width:100%}.accounting-control select {max-width:none;flex:1}}

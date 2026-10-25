@@ -220,7 +220,7 @@ async function loadShared(){
   const generation=++importGeneration;pause();
   $('refresh-data').disabled=true;$('refresh-data').textContent='↻ Loading…';
   // Capability checks do not delay or discard a valid public snapshot.
-  readPublicJson('./api/status',{attempts:2,timeout:5000}).then(status=>{if(generation!==importGeneration)return;
+  readPublicJson('/api/status',{attempts:2,timeout:5000}).then(status=>{if(generation!==importGeneration)return;
     state.publishingEnabled=status.publishingEnabled===true;state.setupMessage=status.setupMessage??null;
     if(Number.isSafeInteger(status.maxUploadBytes)&&status.maxUploadBytes>0)state.maxUploadBytes=status.maxUploadBytes;
     $('admin-upload').disabled=!state.publishingEnabled;showConnection();

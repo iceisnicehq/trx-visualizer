@@ -1,8 +1,31 @@
-# TRX Flow Atlas · release 33
+# TRX Flow Atlas · release 34
 
 A separate public visualizer for the original 1 TRX stakes. Visitors can explore the shared history and download CSV without signing in. Publishing a replacement JSON snapshot requires a dedicated password, checked by the server on every upload.
 
 The visualizer never connects to a wallet, signs a transaction, approves a transfer, queries TRON, or changes the orchestrator's plan. The supplied dataset is marked **DEMO** and contains synthetic wallets. No real game data has been uploaded for you.
+
+## Publishing route repair · release 34
+
+The Vercel deployment now uses three explicit function files instead of a catch-all:
+
+| Public route | Function file |
+| --- | --- |
+| GET /api/status | api/status.js |
+| GET /api/snapshot | api/snapshot.js |
+| POST /api/admin/publish | api/admin/publish.js |
+
+Each function fixes its public route internally, even if Vercel rewrites the incoming request URL. Browser API requests use origin-root paths, so a nested page cannot accidentally send a publish to reports/day/api/admin/publish. Password, origin, payload and revision checks still apply to every upload.
+
+**Upgrade your Vercel copy:**
+
+1. Replace the Flow project source with this release. Remove the old api/[...route].js from your repository; it is replaced by the three files above. Preserve your project environment variables and private Blob store.
+2. Set **Root Directory** to the Flow folder containing **package.json, vercel.json and api/**. Do not set Root Directory to public. Framework: **Other**. Build: **npm run build:static**. Output Directory: **public**. Do not upload only the contents of public; that omits the API.
+3. Redeploy that Vercel project, then hard-refresh your browser. Verify in the deployment details that all three functions were built. The publishing function must be present alongside status and snapshot. The new archive does not change your publishing password, verifier or storage token.
+4. Open **/api/status** and **/api/snapshot** on your own Flow origin: both must return JSON. Open **/api/admin/publish** in the browser: **405 Method Not Allowed** with **Allow: POST, PUT** is the expected read-only result, confirming that the route exists. A 404 means the publishing function has not been deployed at that URL. Admin upload uses POST and must still validate the password and JSON.
+
+If the route still returns 404, check the Root Directory and whether api/admin/publish.js is committed in the deployed revision. Remove an old SPA catch-all rewrite that serves index.html for API paths. The included vercel.json requires no SPA fallback. Test your actual Vercel domain; deploying a separate hosted copy does not update your project.
+
+The route modules and an authenticated upload are tested locally with isolated storage. Your Vercel account/domain is not available in this workspace, so its deployment must still be verified using the steps above.
 
 ## Independent analytics · release 33
 
@@ -69,7 +92,7 @@ If you already deployed the former proxy version, replace its source with this r
 
 [Vercel Functions have a 4.5 MB request/response limit](https://vercel.com/docs/functions/limitations). This app therefore accepts up to **4,000,000 bytes of normalized JSON** per upload on Vercel. Pretty-printed input can be larger if its normalized public payload fits. Node and native Worker copies allow up to 12 MiB. Vercel uses the pinned official @vercel/blob SDK; reads bypass the Blob CDN cache so Refresh sees the latest saved snapshot. Conditional writes reject competing uploads instead of silently overwriting them.
 
-I have not provisioned storage or deployed into your Vercel account. Those are the project-specific steps above; the supplied project and adapter tests are ready for them.
+This archive does not provision your Vercel project or storage. Configure the project-specific settings above before publishing.
 
 ## Generate this Flow instance's credentials
 

@@ -12,6 +12,7 @@ export function parseSnapshotFile(text){
 }
 async function decode(response,path,write=false){
   const status=response.status,label=`HTTP ${status} at ${path}`;
+  if(write&&status===404)throw new ApiError(`This Flow deployment is missing its publishing endpoint (${label}). Deploy api/admin/publish.js from the Flow project root; a static-only deployment cannot publish.`,{status});
   if(!isJson(response.headers.get('content-type')))throw new ApiError(`The host returned a page instead of JSON (${label}). ${write?'The upload result is unconfirmed; refresh public data before retrying.':'Retry Refresh. The current view has been retained.'}`,{status,retryable:status===200||status===408||status===429||status>=500,uncertain:write});
   let body;try{body=await response.json();}catch{throw new ApiError(`The host returned incomplete JSON (${label}). ${write?'Refresh public data before retrying the upload.':'Retry Refresh.'}`,{status,retryable:true,uncertain:write});}
   if(!response.ok)throw new ApiError(typeof body?.error==='string'?`${body.error.slice(0,500)} (${label})`:`The request failed (${label}).`,{status,retryable:status===408||status===429||status>=500,uncertain:write&&status>=500});
@@ -31,7 +32,7 @@ export async function readPublicJson(path,{fetchImpl=fetch,sleep=later,attempts=
   throw last;
 }
 export async function readSnapshot(options){
-  const body=await readPublicJson('./api/snapshot',options);
+  const body=await readPublicJson('/api/snapshot',options);
   if(!body.dataset||!(body.revision==='demo'||/^[a-f0-9]{32}$/.test(body.revision??'')))throw new ApiError('The snapshot server returned an invalid data envelope. The current view has been retained.');
   return body;
 }
@@ -42,7 +43,7 @@ export function acceptPublishedSnapshot(dataset,receipt,commit){
   commit({dataset,revision:receipt.revision,publishedAt:receipt.publishedAt,source:'published'});
 }
 export async function publishSnapshot(dataset,{password,revision,fetchImpl=fetch,sleep=later}={}){
-  const path='./api/admin/publish',started=Date.now();
+  const path='/api/admin/publish',started=Date.now();
   try{
     const response=await fetchImpl(path,{method:'POST',credentials:'omit',redirect:'error',headers:{'Content-Type':'application/json',Accept:'application/json','X-Flow-Password':password,'If-Match':revision},body:JSON.stringify(dataset),signal:AbortSignal.timeout(45_000)});
     const receipt=await decode(response,path,true);acceptPublishedSnapshot(dataset,receipt,()=>{});return receipt;

@@ -48,6 +48,11 @@ test('an unconfirmed write never substitutes the intended upload for a different
 test('a fake upload receipt cannot replace the current view',()=>{
   let writes=0;assert.throws(()=>acceptPublishedSnapshot(dataset,{ok:true,revision:'demo',publishedAt},()=>writes++),/receipt is invalid/);assert.equal(writes,0);
 });
+test('a missing publishing route gives deployment instructions and never retries the upload',async()=>{
+  let writes=0;await assert.rejects(publishSnapshot(dataset,{revision,password:'TEST-ONLY',sleep,fetchImpl:async()=>{writes++;return json({error:{code:'NOT_FOUND'}},404);}}),
+    error=>error.status===404&&error.message.includes('api/admin/publish.js')&&!error.message.includes('The request failed'));
+  assert.equal(writes,1);
+});
 test('files containing a hosting error page get a file-specific explanation and BOM JSON is accepted',()=>{
   assert.throws(()=>parseSnapshotFile('The page could not be loaded.'),/failed download/);
   assert.throws(()=>parseSnapshotFile('<!doctype html>'),/not a Flow Atlas JSON export/);

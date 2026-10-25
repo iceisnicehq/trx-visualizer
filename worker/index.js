@@ -47,6 +47,7 @@ export function createHandler(assets){
       const passwordConfigured=/^pbkdf2-sha256:100000:[a-f0-9]{32}:[a-f0-9]{64}$/.test(env.FLOW_PUBLISH_AUTH??'');
       const setupMessage=env.SETUP_MESSAGE??(!env.BUCKET?'This Flow instance needs its own persistent storage before publishing.':!passwordConfigured?'Set FLOW_PUBLISH_AUTH to the server verifier from flow-atlas-admin.txt. Enter the actual password only in Admin upload.':null);
       if(path==='/api/status'&&request.method==='GET')return response({publishingEnabled:Boolean(env.BUCKET&&passwordConfigured),maxUploadBytes:uploadLimit,setupMessage});
+      if(path==='/api/admin/publish'&&!['POST','PUT'].includes(request.method))return response({error:'This is the Flow publishing endpoint. Use POST or PUT with the publishing password and current snapshot revision.'},405,{Allow:'POST, PUT'});
       if(path==='/api/snapshot'&&['GET','HEAD'].includes(request.method)){
         if(!env.BUCKET)return response({dataset:JSON.parse(asset('/dataset.json').body),revision:'demo',publishedAt:null,source:'unconfigured',setupMessage});
         try{

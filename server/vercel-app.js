@@ -18,9 +18,9 @@ export function createVercelApp({environment=process.env,loadSdk=()=>import('@ve
     })().catch(error=>{services=null;throw error;});
     return services;
   }
-  return async(req,res)=>{
+  return async(req,res,fixedPath)=>{
     try{
-      const path=new URL(req.url,'https://flow.invalid').pathname;
+      const path=fixedPath??new URL(req.url,'https://flow.invalid').pathname;
       if(!paths.has(path)){errorReply(res,404,'Not found.');return;}
       const host=String(req.headers['x-forwarded-host']??req.headers.host??'');
       if(!/^[a-z0-9.-]+(?::\d+)?$/i.test(host)){errorReply(res,400,'Invalid Flow host.');return;}
@@ -37,5 +37,12 @@ export function createVercelApp({environment=process.env,loadSdk=()=>import('@ve
       res.statusCode=reply.status;for(const [name,value] of reply.headers)res.setHeader(name,value);res.end(Buffer.from(await reply.arrayBuffer()));
     }catch{errorReply(res,503,'Flow could not access its own storage. Check this Flow deployment’s storage configuration.');}
   };
+}
+/** Each filesystem entry point fixes its own public path. Vercel may rewrite
+ * req.url internally; that must not turn a mounted publisher into a 404. */
+export function createVercelEndpoint(path,options){
+  if(!paths.has(path))throw Error('Unknown Flow API endpoint.');
+  const handle=createVercelApp(options);
+  return (req,res)=>handle(req,res,path);
 }
 export default createVercelApp();

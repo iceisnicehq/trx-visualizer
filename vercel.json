@@ -18,7 +18,15 @@
     }
   ],
   "functions": {
-    "api/**/*.js": {
+    "api/status.js": {
+      "includeFiles": "public/dataset.json",
+      "maxDuration": 60
+    },
+    "api/snapshot.js": {
+      "includeFiles": "public/dataset.json",
+      "maxDuration": 60
+    },
+    "api/admin/publish.js": {
       "includeFiles": "public/dataset.json",
       "maxDuration": 60
     }

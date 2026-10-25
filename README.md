@@ -1,66 +1,86 @@
-# TRX Flow Atlas
+# TRX Flow Atlas · release 31
 
-A separate, static, read-only visualizer for the orchestrator's original 1 TRX stakes. No database, backend, wallet connection, private keys, Telegram token or TRON API key is required. The supplied dataset is a clearly labelled 17-wallet **demonstration**, not your live game.
+A separate public visualizer for the original 1 TRX stakes. Visitors can explore the shared history and download CSV without signing in. Publishing a replacement JSON snapshot requires a dedicated password, checked by the server on every upload.
 
-## Use your own game
+The visualizer never connects to a wallet, signs a transaction, approves a transfer, queries TRON, or changes the orchestrator's plan. The supplied dataset is marked **DEMO** and contains synthetic wallets. No real game data has been uploaded for you.
 
-1. Upgrade the orchestrator to release 30 while retaining its existing `.env`, `config/wallets.json`, Compose project and database volume. This adds a read-only export; it does not change the engine or restart a plan.
-2. At the top of the dashboard, click **Скачать все потоки · JSON**. It exports all saved plans, their confirmed and remaining steps, selected next-plan previews and optional legacy attribution in one coherent snapshot.
-3. Open the visualizer and click **Import your data**, or drop the JSON file onto it. The import stays in that browser tab; it is not uploaded. Reloading returns to the snapshot shipped with the site.
-4. The **CSV всех участников** download also contains all stakes and their starting allocations in one file. You can import it instead of JSON. A transfer carrying several owners appears in multiple CSV rows but is counted only once in the visualizer.
-5. Existing personal report CSVs can be selected together. They are deduplicated by period and sequence. They are labelled **partial** because omitted files/movements cannot prove a complete ledger. Conflicting versions are rejected; export files from the same snapshot. JSON is the recommended exact format.
+## Publish your game
 
-The export excludes CANCELLED future steps, secrets, signed transaction payloads, admin settings, personal extra Sun and the teacher's unrelated balance. It includes public addresses, transaction IDs, saved ownership allocations, amounts and dates. Reading it never signs, approves, sends, reschedules or resumes anything.
+Website: https://trx-flow-atlas-oct25.purple-rose-4948.chatgpt.site/
 
-## Read the canvas
+1. Upgrade the orchestrator to release 31, retaining its `.env`, wallet config, database volume and Compose project. This update changes the public export and dashboard links; it does not replace the execution engine or regenerate a campaign.
+2. Click **Скачать все потоки · JSON** in the orchestrator. The export includes every recorded confirmed transfer, including pre-plan RANDOM/LIST/REBALANCE, saved campaigns and remaining steps. The endpoint is `GET /api/flow/export?format=json&includeLegacy=1`; legacy inclusion is the default.
+3. Open Flow Atlas and click **Admin upload**. Select that public flow JSON, enter the publishing password from the separately supplied private **flow-atlas-admin.txt**, review the counts and click **Publish for everyone**.
+4. Everyone opening the website sees the saved snapshot. Existing visitors can click **Refresh**. No redeploy is needed. The password is cleared after the request and is never stored in localStorage or the public dataset.
+5. Repeat the export/upload to refresh public history and forecasts. This is a published snapshot, not a live connection to your private server.
 
-- **Everyone together:** one colour per original owner. Circle numbers are wallets; the ring shows whose shares are held there. A 1.25 TRX holder can contain several owners. Choose a transfer to see exact integer-Sun packet composition.
-- **Individual stake:** choose the original owner on the left. The highlighted routes include transfers between other wallets carrying that person's share, not just transfers to/from their address.
-- **Network:** drag wallets freely; their positions are retained while you play, scrub and filter. Drag empty space to pan. Scroll or use +/− to zoom. Fit and Reset layout are separate actions. Fullscreen provides a larger canvas.
-- **Journey timeline:** each wallet has a lane; time runs left to right. Circles and arrows replace the previous rectangle-based ownership DAG. Drag and zoom to inspect intersections. Click an arrow for its transfer or a circle for the holding wallet.
-- **Playback:** choose one day or one transfer per step and a duration of 1, 1.5, 2 or 4 seconds. All visible transfers in a day light up during that frame. When following one stake in single-transfer mode, Play/Next skip unrelated transfers; balances still replay the complete included ledger. Pause or scrub to inspect balances after it. Arrow keys step; Space plays/pauses. Fullscreen retains the playback controls; browsers that block the fullscreen API get an expanded in-page canvas instead, with Esc to return. Reduced-motion preference disables moving particles; paused canvases redraw only when something changes.
-- **Calendar day · MSK:** groups by actual block/recorded date for confirmed transfers, and current forecast date for pending steps. The range contains days with recorded/planned activity; it does not add empty calendar days. **Algorithm round** uses the saved campaign day instead. Neither mode changes the actual plan.
-- **Confirmed only / History + forecast:** confirmed paths are solid; future paths are dashed and explicitly labelled FORECAST. A mixed day is labelled FORECAST when it contains any pending step. Exported forecast times can become stale.
-- **Plan scope:** show all plans or one selected period. Earlier plans and a selected next-plan DRAFT are separate chapters. Starting allocations reset at explicit accounting boundaries; the same 1 TRX is reused, not added again per plan. A boundary is never animated as a native transfer.
-- **Before the plans:** optional RANDOM/LIST history uses the orchestrator's existing FIFO accounting convention. That assumes a 1 TRX starting stake per configured wallet and is clearly labelled. It is not proof that particular Sun belong to somebody. Missing ownership or a deficit stops reconstruction of that period instead of inventing funds. The network can still show the recorded native transfer.
-- **Image export:** the down-arrow canvas control downloads the current canvas as PNG. Existing orchestrator CSV/SVG report exports remain available.
+The publishing password is separate from the game's `ADMIN_PASSWORD`. It only authorizes replacement of this public dataset. Keep the access file private; do not add it to Git, a public ZIP, or `public/`. A successful replacement retains the previous version in server storage. A stale upload returns a conflict; refresh and review before retrying. If a connection drops while publishing, refresh to check which version was saved before uploading again.
 
-The coloured ownership ledger is an application accounting model. TRON native balances do not carry original-owner labels. Replay checks conservation of every included stake; it is not a live audit of the entire account balance.
+Upload an orchestrator flow export, **never config/wallets.json**. The server validates the schema, addresses, integer amounts and complete SMART allocation ledger, then saves only whitelisted public fields. It enforces a 12 MiB limit. Incorrect passwords, invalid data and failed writes do not replace the current snapshot. Hosted data survives a restart and deployment, independently of the orchestrator's database.
 
-## Share publicly / Vercel
+## Read the vertical graph
 
-Two independent choices:
+- **Day-by-day tree** is the default: fixed wallet columns, repeated wallet rows, time and arrows running **downward**. The starting row is the recorded initial allocation, normally 1 TRX each. Holding lines show shares staying at a wallet; arrows show recorded or forecast native transfers. Tiny checkpoints preserve order when funds move several times within a day.
+- Each circle shows the **wallet number, final three address characters, tracked balance and stake breakdown**. The short breakdown uses `owner number: amount`; click for full addresses and composition. Personal extra Sun is excluded.
+- Scroll in the canvas to move through days; **Shift + scroll** pans horizontally; **Ctrl/Command + scroll** zooms. Drag empty space to pan. Use zoom out or fullscreen for more columns. The canvas keeps a readable scale instead of squeezing forty days into one screen; off-screen wallets remain in the graph.
+- Select a participant on the left to follow **their original 1 TRX**, including fragments moving between other wallets. The camera brings their holders/routes into view. The right panel contains the complete journey with **Confirmed / All steps** filters. Click a history entry to jump to its day and packet composition.
+- Click a wallet circle on a day to see its holdings then and its complete incoming/outgoing history. Physical wallet history and the original owner's stake journey are different views.
+- **Before the plans** is enabled by default. Earlier RANDOM/LIST/REBALANCE appears in brown in the shared view. The coverage line counts confirmed and pre-plan transfers. If an export excluded earlier history, the page requests a new export with `includeLegacy=1`.
+- **Everyone together** shows all intersections. **Network** remains an alternative layout; dragged wallet positions survive playback. **Fit** restores the readable camera instead of cramming the vertical graph into one screen.
+- **Play**, Previous/Next, the slider and Space/arrow keys control replay: one active day or one transfer per step, at 1, 1.5, 2 or 4 seconds. Confirmed paths are solid; pending paths are dashed and labelled **FORECAST**. Reduced-motion preference disables travelling particles.
+- **Calendar day · MSK** uses actual recorded confirmation dates and current forecasts; **Algorithm round** uses saved campaign rounds. Rows represent days with included activity and explicit accounting boundaries. Future timestamps may change in the orchestrator after export.
+- Each new plan starts its recorded ownership chapter. The same 1 TRX is reused, not added again. A boundary is never a transfer. Filter one plan or see every chapter together.
+- The canvas down-arrow downloads the visible canvas as PNG. **Save public snapshot** downloads the public JSON. No password is needed for downloads.
 
-1. **Share the empty tool/demo:** deploy it as supplied. Visitors import their own public reports locally. Their imports are never sent to the host. A copied view link contains filters and frame position, not the imported file.
-2. **Give every visitor the same game:** download your public JSON export, replace **`dist/dataset.json`** with it, then deploy/redeploy. Keep the filename exactly `dataset.json`. Every visitor can then follow that shared snapshot immediately. `dist/demo.json` remains a separate demonstration. A download named `dataset.json` is also available inside the visualizer under Save public snapshot. To update the public history, replace the file and redeploy; it does not poll your server.
+TRON does not label individual Sun with original owners. SMART colours use saved application allocations. Earlier history uses the orchestrator's FIFO accounting convention, assuming a starting 1 TRX per configured wallet. If a legacy journal cannot prove a later allocation, native transfers remain visible as unknown and later balances in that chapter are not inferred. The app does not invent ownership or fetch omitted transactions from the blockchain. Export the complete recorded journal for the best coverage.
 
-For Vercel:
+## Download personal CSV or everyone's CSV
 
-1. Put this folder in a separate Git repository and import that repository into Vercel. Do not use the orchestrator server's repository root as the deployment root.
-2. Framework preset: **Other**. Build command: **`npm run build`**. Output directory: **`dist`**. No environment variables or runtime services are needed. The included `vercel.json` declares these settings.
-3. Deploy and share the resulting HTTPS URL. The small build checks syntax, the UI controls and dataset validity; it does not contact TRON or upload local browser imports.
+Both buttons are in Flow Atlas so participants can obtain their reports from the public site:
 
-Any ordinary static host can serve the contents of `dist/` at its root. `index.html` and relative assets also work under a subdirectory. Serve through HTTP(S), not `file://`, because the app loads ES modules and a local JSON file.
+- Select your participant, then **My 1 TRX · CSV**: your starting stake and every recorded/forecast movement carrying part of it through any holder, across all available chapters. This is not limited to transfers from your own address. Unknown legacy attribution stays explicitly unknown.
+- **Everyone · CSV**: all participants and chapters. Multi-owner packets have one row per contribution linked to one physical transfer. Importers must deduplicate transfers instead of adding their full amount once per owner.
 
-The code has no third-party fonts, analytics, CDN scripts, signing library or external API calls. The optional TRONSCAN link is an ordinary link opened only when a visitor clicks it.
+Both exports include pre-plan history present in the snapshot, regardless of the canvas day or selected plan. **Confirmed only** excludes future steps; **History + forecast** includes them. The legacy canvas checkbox controls drawing and does not silently remove earlier CSV chapters.
 
-## Development and tests
+CSV is UTF-8 with BOM and standard quoting. It includes full addresses, UTC dates, exact integer Sun, six-decimal TRX, txIDs, original owner, owner contribution, packet composition and attribution basis. Bandwidth is for the **whole native transaction**, not an owner's fraction. `WALLET` rows preserve numbers/labels, `BASELINE` defines starting allocations and `TRANSFER` defines movements. Personal CSV tracks the selected stake and retains whole packet amounts/composition for context. The files can drive another visualizer using `public/model.js`'s `datasetFromCsv()` and replay helpers. The shared publishing endpoint accepts JSON only.
 
-Node.js 22 or newer, no npm dependencies:
+## Run your own copy
+
+Node.js 22 or newer; no npm runtime dependencies.
 
 ```bash
 npm test
 npm run build
+cp .env.example .env
+node scripts/create-admin.mjs flow-atlas-admin.txt
 ```
 
-For local viewing on your own computer:
+The last command creates a new private access file and prints its **server verifier**, not the password. Copy that verifier into `.env` as `FLOW_PUBLISH_AUTH`; never use the actual password for this variable. Keep the file outside directories you serve.
 
 ```bash
-python3 -m http.server 8090 --directory dist
+node --env-file=.env scripts/serve.mjs
 ```
 
-Open `http://localhost:8090`. `node scripts/demo.mjs` regenerates the bundled demonstration and **overwrites `dist/dataset.json`** as well as `dist/demo.json`; do not run it after replacing the hosted game snapshot.
+Open `http://localhost:8090`. The single-process Node server binds to `127.0.0.1`, checks publishing passwords and atomically saves data in `FLOW_DATA_DIR` (default `.data`). Restarts retain uploaded data. Back up that directory and preserve it and `.env` during upgrades. For public hosting, add an HTTPS reverse proxy and set `FLOW_PUBLIC_ORIGIN=https://your-host.example` to the exact public origin. Do not run multiple Node instances against the filesystem adapter; the hosted production Worker uses conditional R2 writes for shared storage.
 
-Files: `dist/model.js` validates imports, deduplicates CSV and replays integer-Sun ownership; `dist/canvas.js` renders and handles camera/dragging; `dist/app.js` controls playback, imports and inspection. Tests cover single-Sun conservation, multi-owner packets, peer-to-peer personal tracing, multiple plans, backwards scrubbing, unknown history, CSV quoting/deduplication/conflicts, validation, and the complete 17-wallet example.
+A static read-only copy can serve `public/` over HTTP(S). Without `/api/snapshot`, it uses the bundled snapshot and disables Admin upload. Replacing `public/dataset.json` changes that static copy, but static hosting alone cannot persist password-protected uploads.
 
-The orchestrator exposes `GET /api/flow/export?format=json|csv&includeLegacy=0|1`. Default is JSON with legacy included. This endpoint returns an attachment and does not mutate the game. Re-export from the server to refresh a local/public snapshot.
+## Optional Vercel frontend
+
+The site is already hosted. For an optional Vercel URL, `vercel.json` serves `public/` and `api/[...route].js` proxies only the three Flow Atlas API routes to the persistent server. It never connects to your orchestrator.
+
+1. Deploy **only this visualizer folder** from a separate repository. Exclude wallet config, `.env`, private access files and the orchestrator root.
+2. Framework: **Other**; build: **npm run build:static**; output: **public**. Retain `api/` so Vercel deploys the server proxy.
+3. Set server environment variable `FLOW_API_ORIGIN` to `https://trx-flow-atlas-oct25.purple-rose-4948.chatgpt.site`. No publishing password goes into frontend configuration. The shared upstream server checks it on upload.
+4. Deploy. Both sites read the same persisted snapshot. Admin uploads still require the publishing password. Removing the proxy leaves a static demonstration, not a shared writable store.
+
+[Vercel Functions limit request/response bodies to 4.5 MB](https://vercel.com/docs/functions/limitations). Larger snapshots should use the existing direct website instead of this optional proxy. The main publisher allows 12 MiB. This archive does not provision a Vercel project or vanity domain.
+
+## Source and verification
+
+`public/model.js` validates and replays integer Sun allocations; `exports.js` creates CSV; `tree-layout.js` fixes columns/day spacing; `canvas.js` renders; `app.js` controls history, playback and publishing. `worker/index.js` provides public reads and authenticated conditional writes. `scripts/build-worker.mjs` embeds assets in an ESM Worker; native hosting provisions `BUCKET`. `scripts/file-bucket.mjs` is the separate single-process local adapter.
+
+Tests cover exact conservation, earlier history, personal peer-to-peer tracing, CSV round trips, fixed columns, password validation, rejected uploads, concurrent conflicts, previous-version retention and persistence across server handlers. Tests use synthetic data and never contact TRON.
+
+`node scripts/demo.mjs` regenerates and **overwrites public/dataset.json and public/demo.json**. It does not overwrite a published server snapshot. Refresh real game data through the orchestrator export instead.

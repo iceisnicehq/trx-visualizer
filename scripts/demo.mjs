@@ -1,5 +1,5 @@
 import {writeFile} from 'node:fs/promises';
-import {normaliseDataset,SUN} from '../dist/model.js';
+import {normaliseDataset,SUN} from '../public/model.js';
 const wallets=Array.from({length:17},(_,i)=>({address:`DEMO-WALLET-${String(i+1).padStart(2,'0')}`,label:`Node ${i+1}`,ordinal:i,role:'participant'}));
 wallets.push({address:'DEMO-TEACHER',label:'Teacher',ordinal:17,role:'teacher'});
 const members=wallets.filter(w=>w.role==='participant'),periods=[],transactions=[];let sequence=1;
@@ -40,6 +40,6 @@ period('demo-plan-one','Plan 1','2026-10-04T09:00:00Z',10,10);
 period('demo-plan-two','Plan 2','2026-10-15T09:00:00Z',16,7);
 const data=normaliseDataset({format:'trx-flow-atlas',version:1,title:'A shared journey · demonstration',network:'DEMO',demo:true,
   createdAt:'2026-10-25T09:00:00Z',wallets,periods,transactions,warnings:[]});
-await writeFile(new URL('../dist/dataset.json',import.meta.url),JSON.stringify(data));
-await writeFile(new URL('../dist/demo.json',import.meta.url),JSON.stringify(data));
+await writeFile(new URL('../public/dataset.json',import.meta.url),JSON.stringify(data));
+await writeFile(new URL('../public/demo.json',import.meta.url),JSON.stringify(data));
 console.log(`Demo: ${data.wallets.length-1} participants, ${data.periods.length} periods, ${data.transactions.length} native transfers.`);

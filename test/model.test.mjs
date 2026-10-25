@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import {strictEqual,deepStrictEqual,ok,throws} from 'node:assert';
 import {readFile} from 'node:fs/promises';
-import {normaliseDataset,parseCsv,datasetFromCsv,buildFrames,createReplay,ownerPositions,composition,visibleTransactions,SUN} from '../dist/model.js';
+import {normaliseDataset,parseCsv,datasetFromCsv,buildFrames,createReplay,ownerPositions,composition,visibleTransactions,SUN} from '../public/model.js';
 const a='Wallet-AAA',b='Wallet-BBB',c='Wallet-CCC';
 const sample=()=>({format:'trx-flow-atlas',version:1,network:'mock',wallets:[a,b,c].map((address,ordinal)=>({address,ordinal,label:'Node '+(ordinal+1)})),
   periods:[{id:'plan-one',type:'SMART',label:'Plan 1',initial:[a,b,c].map(ownerAddress=>({holderAddress:ownerAddress,ownerAddress,amountSun:SUN}))}],
@@ -35,8 +35,8 @@ test('confirmed-only, plan, legacy and algorithm-round filters are independent',
   const data=normaliseDataset(raw);
   strictEqual(buildFrames(data,{status:'confirmed'}).flatMap(f=>f.events).length,1);
   strictEqual(buildFrames(data,{axis:'round'})[1].label,'Round 1');
-  strictEqual(buildFrames(data,{scope:'legacy-one'}).length,0);strictEqual(buildFrames(data,{scope:'legacy-one',legacy:true}).length,1);
-  raw.periods[0].status='DRAFT';strictEqual(buildFrames(normaliseDataset(raw),{status:'confirmed'}).length,0);
+  strictEqual(buildFrames(data,{scope:'legacy-one',legacy:false}).length,0);strictEqual(buildFrames(data,{scope:'legacy-one',legacy:true}).length,1);
+  raw.periods[0].status='DRAFT';strictEqual(buildFrames(normaliseDataset(raw),{status:'confirmed',legacy:false}).length,0);
 });
 test('a deficit or unknown attribution stops its period without creating or partially spending any stake',()=>{
   const raw=sample();raw.transactions[1].allocations=[{ownerAddress:a,amountSun:750001}];
@@ -74,7 +74,7 @@ test('inconsistent CSV snapshots are rejected rather than silently replacing rec
   throws(()=>datasetFromCsv([{text:csv([header,row])},{text:csv([header,other])}]),/Conflicting/);
 });
 test('complete demo replays every frame, conserves 17 stakes, and returns each original stake at the end of both plans',async()=>{
-  const data=normaliseDataset(JSON.parse(await readFile(new URL('../dist/dataset.json',import.meta.url),'utf8'))),frames=buildFrames(data,{legacy:true}),replay=createReplay(frames);
+  const data=normaliseDataset(JSON.parse(await readFile(new URL('../public/dataset.json',import.meta.url),'utf8'))),frames=buildFrames(data,{legacy:true}),replay=createReplay(frames);
   for(let i=0;i<frames.length;i++){
     const result=replay(i);strictEqual(result.issue,null,frames[i].label);strictEqual([...result.after.values()].reduce((a,b)=>a+b,0),17*SUN);
     for(const a of frames[i].period.initial)strictEqual(ownerPositions(result.after,a.ownerAddress).reduce((n,p)=>n+p.amountSun,0),SUN);

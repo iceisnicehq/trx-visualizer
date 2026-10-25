@@ -2,7 +2,7 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {createHandler} from '../worker/index.js';
 import {fileBucket} from './file-bucket.mjs';
-const names=['index.html','style.css','model.js','canvas.js','app.js','exports.js','tree-layout.js','dataset.json','demo.json'],assets=new Map();
+const names=['index.html','style.css','model.js','canvas.js','app.js','exports.js','tree-layout.js','transport.js','dataset.json','demo.json'],assets=new Map();
 for(const name of names)assets.set('/'+name,{body:await readFile(new URL('../public/'+name,import.meta.url),'utf8'),type:name.endsWith('.json')?'application/json':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html'});
 const port=Number(process.env.PORT??8090),env={BUCKET:fileBucket(process.env.FLOW_DATA_DIR??'.data'),FLOW_PUBLISH_AUTH:process.env.FLOW_PUBLISH_AUTH};
 const handler=createHandler(assets);

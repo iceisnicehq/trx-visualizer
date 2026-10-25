@@ -1,8 +1,14 @@
-# TRX Flow Atlas · release 31
+# TRX Flow Atlas · release 32
 
 A separate public visualizer for the original 1 TRX stakes. Visitors can explore the shared history and download CSV without signing in. Publishing a replacement JSON snapshot requires a dedicated password, checked by the server on every upload.
 
 The visualizer never connects to a wallet, signs a transaction, approves a transfer, queries TRON, or changes the orchestrator's plan. The supplied dataset is marked **DEMO** and contains synthetic wallets. No real game data has been uploaded for you.
+
+## Upload and refresh repair · release 32
+
+Public API reads now retry temporary network/host failures at most three times and do not send visitor login cookies. Publishing uses POST with the same password, origin and revision checks; PUT remains compatible. A host error page produces an HTTP/path diagnostic instead of an Unexpected token error. A selected file containing an error page is identified as a failed download. Download a fresh flow JSON from the orchestrator in that case.
+
+Once the server confirms an upload, its validated data appears immediately. A failed follow-up GET cannot leave the old history displayed. If a write reply is lost, the client only reads to check whether that exact snapshot was saved; it never automatically repeats the upload. Persistent read errors appear in a visible banner and preserve the current view. The publishing password and stored snapshots are retained. Updating the already hosted website does not require an orchestrator restart.
 
 ## Publish your game
 

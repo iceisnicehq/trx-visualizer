@@ -41,6 +41,7 @@ export function createHandler(assets){
   const asset=path=>assets.get(path);
   return {
     async fetch(request,env={},ctx={}){
+      try{
       const url=new URL(request.url),path=url.pathname;
       if(path==='/api/status'&&request.method==='GET')return response({publishingEnabled:Boolean(env.BUCKET&&env.FLOW_PUBLISH_AUTH),maxUploadBytes:MAX_UPLOAD_BYTES});
       if(path==='/api/snapshot'&&['GET','HEAD'].includes(request.method)){
@@ -52,7 +53,7 @@ export function createHandler(assets){
           return response({dataset:saved.dataset,revision:object.etag,publishedAt:saved.publishedAt,source:'published'},200,{'ETag':object.httpEtag});
         }catch{return response({error:'Cannot read the shared snapshot. Retry shortly.'},503);}
       }
-      if(path==='/api/admin/publish'&&request.method==='PUT'){
+      if(path==='/api/admin/publish'&&['POST','PUT'].includes(request.method)){
         if(!env.BUCKET||!env.FLOW_PUBLISH_AUTH)return response({error:'Publishing is not configured on this host.'},503);
         if(request.headers.get('origin')!==url.origin)return response({error:'Publish from the same website.'},403);
         if(!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))return response({error:'Upload a public JSON snapshot.'},415);
@@ -83,6 +84,7 @@ export function createHandler(assets){
       const value=asset(path==='/'?'/index.html':path);
       if(!value)return new Response('Not found',{status:404});
       return new Response(request.method==='HEAD'?null:value.body,{headers:{'Content-Type':value.type,'Cache-Control':path.endsWith('.json')?'no-store':'public, max-age=0, must-revalidate','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY'}});
+      }catch(error){console.error('Flow Atlas API failure: '+(error?.name??'Error'));return response({error:'The snapshot service encountered an error. Retry Refresh before another upload.'},500);}
     }
   };
 }

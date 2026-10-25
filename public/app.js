@@ -1,6 +1,7 @@
 import {COLOURS,SUN,normaliseDataset,datasetFromCsv,buildFrames,createReplay,composition,ownerPositions,visibleTransactions,formatSun,shortAddress,timeOf} from './model.js';
 import {FlowCanvas} from './canvas.js';
 import {journeyCsv} from './exports.js';
+import {readPublicJson,readSnapshot,publishSnapshot,acceptPublishedSnapshot,parseSnapshotFile} from './transport.js';
 const $=id=>document.getElementById(id),element=(tag,className,text)=>{const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=String(text);return el;};
 const params=new URLSearchParams(location.hash.slice(1));
 const state={data:null,frames:[],index:0,owner:null,selectedWallet:null,selectedTransfer:null,playing:false,trails:true,scope:'all',legacy:true,axis:'calendar',granularity:'day',status:'all',view:'timeline',historyStatus:'CONFIRMED',sharedRevision:'demo',
@@ -216,21 +217,26 @@ $('copy-link').addEventListener('click',async()=>{
 let stagedSnapshot=null,stagedGeneration=0;
 async function loadShared(){
   const generation=++importGeneration;pause();
-  const [snapshot,status]=await Promise.all([
-    fetch('./api/snapshot',{cache:'no-store',signal:AbortSignal.timeout(20_000)}),
-    fetch('./api/status',{cache:'no-store',signal:AbortSignal.timeout(10_000)}).then(r=>r.ok?r.json():{publishingEnabled:false}).catch(()=>({publishingEnabled:false}))
-  ]);
-  if(!snapshot.ok){
-    if(snapshot.status===404){
-      const fallback=await fetch('./dataset.json',{cache:'no-store'});if(!fallback.ok)throw Error('No shared snapshot is configured on this static host.');
-      if(generation!==importGeneration)return;load(await fallback.json(),'static read-only snapshot');$('admin-upload').disabled=true;return;
+  $('refresh-data').disabled=true;$('refresh-data').textContent='↻ Loading…';
+  // Capability checks do not delay or discard a valid public snapshot.
+  readPublicJson('./api/status',{attempts:2,timeout:5000}).then(status=>{if(generation!==importGeneration)return;
+    state.publishingEnabled=status.publishingEnabled===true;$('admin-upload').disabled=!state.publishingEnabled;
+  }).catch(()=>{});
+  try{
+    const body=await readSnapshot();if(generation!==importGeneration)return;
+    load(body.dataset,body.publishedAt?'published '+new Date(body.publishedAt).toLocaleString('en-GB',{timeZone:'Europe/Moscow'})+' MSK':'shared demonstration');
+    state.sharedRevision=body.revision;state.sharedReady=true;$('connection-status').hidden=true;
+  }catch(error){
+    if(generation!==importGeneration)return;
+    if(error.status===404){
+      const fallback=await readPublicJson('./dataset.json',{attempts:1});if(generation!==importGeneration)return;
+      load(fallback,'static read-only snapshot');state.sharedReady=false;$('admin-upload').disabled=true;
+      $('connection-status').textContent='Static read-only copy. Shared publishing is unavailable on this host.';$('connection-status').hidden=false;return;
     }
-    throw Error('The shared snapshot could not be read. Retry Refresh; the current view is retained.');
-  }
-  const body=await snapshot.json();if(generation!==importGeneration)return;
-  state.sharedRevision=body.revision;state.publishingEnabled=status.publishingEnabled===true;
-  load(body.dataset,body.publishedAt?'published '+new Date(body.publishedAt).toLocaleString('en-GB',{timeZone:'Europe/Moscow'})+' MSK':'shared demonstration');
-  $('admin-upload').disabled=!state.publishingEnabled;
+    $('connection-status').textContent=error.message;$('connection-status').hidden=false;
+    if(!state.data){$('source-badge').textContent='CONNECTION ERROR';$('subtitle').textContent='The shared history could not be loaded. Use Refresh to retry.';$('frame-summary').textContent='Waiting for a valid shared snapshot.';}
+    throw error;
+  }finally{if(generation===importGeneration){$('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';}}
 }
 $('refresh-data').addEventListener('click',()=>loadShared().then(()=>toast('The current public snapshot is loaded.')).catch(e=>toast(e.message)));
 $('admin-upload').addEventListener('click',()=>{
@@ -246,7 +252,7 @@ $('file-input').addEventListener('change',async e=>{
   const generation=++stagedGeneration;stagedSnapshot=null;$('publish-submit').disabled=true;$('publish-error').textContent='';
   try{
     const file=e.target.files?.[0];if(!file)return;if(file.size>12*1024*1024)throw Error('The JSON publishing limit is 12 MB.');
-    const data=normaliseDataset(JSON.parse(await file.text()));if(generation!==stagedGeneration)return;stagedSnapshot=data;
+    const data=normaliseDataset(parseSnapshotFile(await file.text()));if(generation!==stagedGeneration)return;stagedSnapshot=data;
     const earlier=data.transactions.filter(t=>data.periods.some(p=>p.id===t.periodId&&p.type==='LEGACY')).length;
     $('publish-preview').textContent=`${data.wallets.filter(w=>w.role!=='teacher').length} wallets · ${data.transactions.length} native transfers · ${earlier} pre-plan transfers · ${data.periods.length} accounting periods. Publishing replaces the snapshot for every visitor.`;
     $('publish-submit').disabled=false;
@@ -256,10 +262,14 @@ $('publish-form').addEventListener('submit',async e=>{
   e.preventDefault();if(!stagedSnapshot)return;
   $('publish-submit').disabled=true;$('close-publish').disabled=true;$('publish-error').textContent='';
   try{
-    const reply=await fetch('./api/admin/publish',{method:'PUT',headers:{'Content-Type':'application/json','X-Flow-Password':$('publish-password').value,'If-Match':state.sharedRevision},
-      body:JSON.stringify(stagedSnapshot),signal:AbortSignal.timeout(30_000)});
-    const body=await reply.json();if(!reply.ok)throw Error(body.error??'Publishing failed.');
-    $('publish-dialog').close();clearPublish();await loadShared();toast('Published. Everyone now reads this saved snapshot on Refresh.');
+    if(!state.sharedReady){const current=await readSnapshot();state.sharedRevision=current.revision;state.sharedReady=true;}
+    const submitted=stagedSnapshot,receipt=await publishSnapshot(submitted,{password:$('publish-password').value,revision:state.sharedRevision});
+    ++importGeneration;
+    acceptPublishedSnapshot(submitted,receipt,current=>{
+      load(current.dataset,'published '+new Date(current.publishedAt).toLocaleString('en-GB',{timeZone:'Europe/Moscow'})+' MSK');
+      state.sharedRevision=current.revision;state.sharedReady=true;state.publishingEnabled=true;$('admin-upload').disabled=false;$('connection-status').hidden=true;$('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';
+    });
+    $('publish-dialog').close();clearPublish();toast('Published and displayed. Everyone can load this saved snapshot on Refresh.');
   }catch(error){$('publish-error').textContent=error.name==='TimeoutError'||error.name==='TypeError'?'Could not confirm the upload. Refresh public data before trying again.':error.message;
     $('publish-submit').disabled=!stagedSnapshot;
   }finally{$('publish-password').value='';$('close-publish').disabled=false;}

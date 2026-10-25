@@ -71,3 +71,13 @@ test('PBKDF2 validation and the attempt limit reject weak configuration or repea
   for(let i=0;i<8;i++)strictEqual((await handler.fetch(publish(demo,{headers:{'x-flow-password':''}}),env)).status,401);
   strictEqual((await handler.fetch(publish(),env)).status,429);strictEqual(env.BUCKET.objects.size,0);
 });
+test('POST publishing has exactly the same password, origin and revision checks as the compatible PUT route',async()=>{
+  const env={BUCKET:bucket(),FLOW_PUBLISH_AUTH:verifier},handler=createHandler(assets);
+  const post=options=>new Request(publish(demo,options),{method:'POST'});
+  strictEqual((await handler.fetch(post({headers:{'x-flow-password':'wrong'}}),env)).status,401);
+  strictEqual((await handler.fetch(post({headers:{origin:'https://other.test'}}),env)).status,403);
+  strictEqual((await handler.fetch(post({headers:{'if-match':''}}),env)).status,428);
+  const saved=await handler.fetch(post(),env);strictEqual(saved.status,200);
+  const receipt=await saved.json();strictEqual((await handler.fetch(post(),env)).status,409);
+  strictEqual((await (await handler.fetch(new Request(origin+'/api/snapshot'),env)).json()).revision,receipt.revision);
+});

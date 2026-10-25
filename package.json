@@ -1,1 +1,19 @@
-{"name":"trx-flow-atlas","version":"2.0.1","private":true,"type":"module","scripts":{"test":"node --test test/*.test.mjs","build":"node scripts/build-worker.mjs","build:static":"node scripts/check.mjs","start":"node scripts/serve.mjs","create-admin":"node scripts/create-admin.mjs"}}
+{
+  "name": "trx-flow-atlas",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "build": "node scripts/build-worker.mjs",
+    "build:static": "node scripts/check.mjs",
+    "start": "node scripts/serve.mjs",
+    "create-admin": "node scripts/create-admin.mjs"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+flow-atlas-admin.txt
+node_modules
+.data
+dist
+.openai
+test
+README.md

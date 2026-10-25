@@ -1,28 +1,35 @@
-# TRX Flow Atlas · release 32
+# TRX Flow Atlas · release 33
 
 A separate public visualizer for the original 1 TRX stakes. Visitors can explore the shared history and download CSV without signing in. Publishing a replacement JSON snapshot requires a dedicated password, checked by the server on every upload.
 
 The visualizer never connects to a wallet, signs a transaction, approves a transfer, queries TRON, or changes the orchestrator's plan. The supplied dataset is marked **DEMO** and contains synthetic wallets. No real game data has been uploaded for you.
 
-## Upload and refresh repair · release 32
+## Independent analytics · release 33
 
-Public API reads now retry temporary network/host failures at most three times and do not send visitor login cookies. Publishing uses POST with the same password, origin and revision checks; PUT remains compatible. A host error page produces an HTTP/path diagnostic instead of an Unexpected token error. A selected file containing an error page is identified as a failed download. Download a fresh flow JSON from the orchestrator in that case.
+Flow and the mixer are separate deployments. The only handoff is a public JSON file that you download from the mixer and upload manually into Flow. Flow does not need the mixer's URL, API, database, keys or credentials. It does not poll the mixer, send it requests or control transactions. One Flow deployment also does not use another Flow deployment as its backend.
 
-Once the server confirms an upload, its validated data appears immediately. A failed follow-up GET cannot leave the old history displayed. If a write reply is lost, the client only reads to check whether that exact snapshot was saved; it never automatically repeats the upload. Persistent read errors appear in a visible banner and preserve the current view. The publishing password and stored snapshots are retained. Updating the already hosted website does not require an orchestrator restart.
+The former optional Vercel proxy was removed. The error “Set FLOW_API_ORIGIN…” meant that old proxy had no destination configured. That variable was an address of a different Flow backend, not the mixer. It is no longer used. Delete it from your Vercel environment to avoid confusion.
+
+Each Flow instance has its own published snapshot, storage and publishing password. Uploading into one instance does not update another instance. All participants visiting the same instance see its saved snapshot and can download their personal or combined CSV.
+
+## Choose where to run Flow
+
+- **Your Vercel project:** the included API runs in that same project and uses a private Blob store attached to that Flow project. Follow the Vercel steps below.
+- **Your VPS / Docker:** the included Node server serves both the page and API, and stores snapshots on its own persistent disk. No Blob token is required.
+- **The separately hosted copy supplied in this conversation:** it has its own storage and publishing configuration already. It remains an independent copy; no other deployment reads its API.
 
 ## Publish your game
 
-Website: https://trx-flow-atlas-oct25.purple-rose-4948.chatgpt.site/
+1. In the mixer, download **Скачать все потоки · JSON**. This includes every recorded confirmed transfer, pre-plan RANDOM/LIST/REBALANCE, previous campaigns and remaining steps. The mixer export is read-only and needs no Flow URL.
+2. Open **your own Flow website** and click **Admin upload**. Select the public flow JSON, enter that Flow instance's publishing password, review the counts and click **Publish for everyone**.
+3. Once the server confirms persistence, the uploaded history appears immediately. Other visitors see it on Refresh. The published snapshot survives restarts and redeployments of that same Flow instance.
+4. Repeat the manual export/upload whenever you want a newer public snapshot. This is not a live connection to the mixer.
 
-1. Upgrade the orchestrator to release 31, retaining its `.env`, wallet config, database volume and Compose project. This update changes the public export and dashboard links; it does not replace the execution engine or regenerate a campaign.
-2. Click **Скачать все потоки · JSON** in the orchestrator. The export includes every recorded confirmed transfer, including pre-plan RANDOM/LIST/REBALANCE, saved campaigns and remaining steps. The endpoint is `GET /api/flow/export?format=json&includeLegacy=1`; legacy inclusion is the default.
-3. Open Flow Atlas and click **Admin upload**. Select that public flow JSON, enter the publishing password from the separately supplied private **flow-atlas-admin.txt**, review the counts and click **Publish for everyone**.
-4. Everyone opening the website sees the saved snapshot. Existing visitors can click **Refresh**. No redeploy is needed. The password is cleared after the request and is never stored in localStorage or the public dataset.
-5. Repeat the export/upload to refresh public history and forecasts. This is a published snapshot, not a live connection to your private server.
+A temporary read error is retried at most three times. An unconfirmed write is checked by reading the same instance; uploads are never automatically repeated. Incorrect passwords, invalid files and stale revisions do not replace its current data. Previous revisions are retained in its own storage.
 
-The publishing password is separate from the game's `ADMIN_PASSWORD`. It only authorizes replacement of this public dataset. Keep the access file private; do not add it to Git, a public ZIP, or `public/`. A successful replacement retains the previous version in server storage. A stale upload returns a conflict; refresh and review before retrying. If a connection drops while publishing, refresh to check which version was saved before uploading again.
+The publishing password is independent of the mixer's ADMIN_PASSWORD. Use the private **flow-atlas-admin.txt** for this Flow instance; it contains the password and its server verifier. Keep that file, .env and storage tokens out of Git and public directories. Upload a public flow export, **never config/wallets.json**. Schema/ledger validation strips unapproved fields and rejects wallet configuration files.
 
-Upload an orchestrator flow export, **never config/wallets.json**. The server validates the schema, addresses, integer amounts and complete SMART allocation ledger, then saves only whitelisted public fields. It enforces a 12 MiB limit. Incorrect passwords, invalid data and failed writes do not replace the current snapshot. Hosted data survives a restart and deployment, independently of the orchestrator's database.
+An instance without configured storage shows the explicitly labelled demonstration and a setup message. It cannot publish until its own storage and publishing verifier are configured. A configured store that becomes unavailable returns an error and retains the current view.
 
 ## Read the vertical graph
 
@@ -51,41 +58,69 @@ Both exports include pre-plan history present in the snapshot, regardless of the
 
 CSV is UTF-8 with BOM and standard quoting. It includes full addresses, UTC dates, exact integer Sun, six-decimal TRX, txIDs, original owner, owner contribution, packet composition and attribution basis. Bandwidth is for the **whole native transaction**, not an owner's fraction. `WALLET` rows preserve numbers/labels, `BASELINE` defines starting allocations and `TRANSFER` defines movements. Personal CSV tracks the selected stake and retains whole packet amounts/composition for context. The files can drive another visualizer using `public/model.js`'s `datasetFromCsv()` and replay helpers. The shared publishing endpoint accepts JSON only.
 
-## Run your own copy
+## Deploy a standalone Vercel instance
 
-Node.js 22 or newer; no npm runtime dependencies.
+1. Deploy **only this Flow folder** in its own Vercel project. Framework: **Other**; build: **npm run build:static**; output: **public**. Retain api/, server/, worker/, package.json and package-lock.json. The API is deployed with the page; it is not a proxy.
+2. In **this Flow project's Storage tab**, create/connect a **Private Vercel Blob store**. Vercel adds **BLOB_READ_WRITE_TOKEN** to the selected deployment environments. Keep this server token private. The storage belongs to Flow and has no relationship to the mixer.
+3. Add server environment variable **FLOW_PUBLISH_AUTH** with the verifier from your private flow-atlas-admin.txt. Do not paste the actual password into this variable. You can reuse the verifier supplied earlier, or generate separate credentials locally using the command below.
+4. Redeploy after changing environment variables. Open your Vercel URL, then Admin upload. The page, API, snapshot and storage now all belong to this instance. Each other independent Flow instance requires its own setup and upload.
+
+If you already deployed the former proxy version, replace its source with this release, remove the obsolete FLOW_API_ORIGIN variable, connect the private store, set FLOW_PUBLISH_AUTH and redeploy. This does not change the mixer. A token from a **public** Blob store will not work with this private-store implementation.
+
+[Vercel Functions have a 4.5 MB request/response limit](https://vercel.com/docs/functions/limitations). This app therefore accepts up to **4,000,000 bytes of normalized JSON** per upload on Vercel. Pretty-printed input can be larger if its normalized public payload fits. Node and native Worker copies allow up to 12 MiB. Vercel uses the pinned official @vercel/blob SDK; reads bypass the Blob CDN cache so Refresh sees the latest saved snapshot. Conditional writes reject competing uploads instead of silently overwriting them.
+
+I have not provisioned storage or deployed into your Vercel account. Those are the project-specific steps above; the supplied project and adapter tests are ready for them.
+
+## Generate this Flow instance's credentials
+
+Node.js 22 or newer:
 
 ```bash
-npm test
-npm run build
-cp .env.example .env
 node scripts/create-admin.mjs flow-atlas-admin.txt
 ```
 
-The last command creates a new private access file and prints its **server verifier**, not the password. Copy that verifier into `.env` as `FLOW_PUBLISH_AUTH`; never use the actual password for this variable. Keep the file outside directories you serve.
+The file is created privately and is not overwritten if it exists. It contains the password you enter on the website and a **server verifier**. Copy only the verifier into FLOW_PUBLISH_AUTH on this Flow host. The command prints that verifier, not the password. Keep the private file outside public/ and out of any shared archive. Existing hosted credentials do not change when the source is upgraded.
+
+## Standalone Node / VPS
+
+```bash
+npm ci
+npm test
+cp .env.example .env
+```
+
+Set FLOW_PUBLISH_AUTH in .env as described above, then:
 
 ```bash
 node --env-file=.env scripts/serve.mjs
 ```
 
-Open `http://localhost:8090`. The single-process Node server binds to `127.0.0.1`, checks publishing passwords and atomically saves data in `FLOW_DATA_DIR` (default `.data`). Restarts retain uploaded data. Back up that directory and preserve it and `.env` during upgrades. For public hosting, add an HTTPS reverse proxy and set `FLOW_PUBLIC_ORIGIN=https://your-host.example` to the exact public origin. Do not run multiple Node instances against the filesystem adapter; the hosted production Worker uses conditional R2 writes for shared storage.
+Open http://localhost:8090. One Node process serves the page and API and stores snapshots under FLOW_DATA_DIR (default .data). Preserve and back up that directory. For public HTTPS hosting, add a reverse proxy to this Node process and set FLOW_PUBLIC_ORIGIN to **this Flow site's own public origin**. It is not an API destination and must never be the mixer's address. BLOB_READ_WRITE_TOKEN is unused by this deployment. The Node runtime uses the filesystem adapter and does not call another server.
 
-A static read-only copy can serve `public/` over HTTP(S). Without `/api/snapshot`, it uses the bundled snapshot and disables Admin upload. Replacing `public/dataset.json` changes that static copy, but static hosting alone cannot persist password-protected uploads.
+## Standalone Docker Compose
 
-## Optional Vercel frontend
+```bash
+cp .env.example .env
+```
 
-The site is already hosted. For an optional Vercel URL, `vercel.json` serves `public/` and `api/[...route].js` proxies only the three Flow Atlas API routes to the persistent server. It never connects to your orchestrator.
+Set FLOW_PUBLISH_AUTH. Then, from this Flow folder:
 
-1. Deploy **only this visualizer folder** from a separate repository. Exclude wallet config, `.env`, private access files and the orchestrator root.
-2. Framework: **Other**; build: **npm run build:static**; output: **public**. Retain `api/` so Vercel deploys the server proxy.
-3. Set server environment variable `FLOW_API_ORIGIN` to `https://trx-flow-atlas-oct25.purple-rose-4948.chatgpt.site`. No publishing password goes into frontend configuration. The shared upstream server checks it on upload.
-4. Deploy. Both sites read the same persisted snapshot. Admin uploads still require the publishing password. Removing the proxy leaves a static demonstration, not a shared writable store.
+```bash
+docker compose up -d --build
+docker compose logs --tail=80 flow
+```
 
-[Vercel Functions limit request/response bodies to 4.5 MB](https://vercel.com/docs/functions/limitations). Larger snapshots should use the existing direct website instead of this optional proxy. The main publisher allows 12 MiB. This archive does not provision a Vercel project or vanity domain.
+Default address: http://localhost:8090, bound to loopback. An SSH tunnel may expose that local port to your own browser. For HTTPS reverse proxy use FLOW_PUBLIC_ORIGIN=https://your-flow.example. The named volume **flow-data** contains Flow snapshots and retained revisions. Preserve it across upgrades; do not use down -v. This Compose project has one Flow service and no mixer service, shared database or connection to a mixer network. To inspect it remotely, use your own SSH tunnel or reverse proxy. If changing the published port, set FLOW_PUBLIC_ORIGIN to the exact browser origin too.
+
+The image uses only the built-in Node filesystem server at runtime. Docker is not available in this build workspace, so the image itself was not executed here; the same Node handler and disk restart persistence are tested.
+
+## Static read-only use
+
+Serve public/ over HTTP(S) for a bundled read-only snapshot; Admin upload is disabled when the API is absent. Replace public/dataset.json and redeploy to update that static copy. Password-protected uploads visible to all visitors require the Node, Vercel or native Worker deployment with its own persistent storage.
 
 ## Source and verification
 
-`public/model.js` validates and replays integer Sun allocations; `exports.js` creates CSV; `tree-layout.js` fixes columns/day spacing; `canvas.js` renders; `app.js` controls history, playback and publishing. `worker/index.js` provides public reads and authenticated conditional writes. `scripts/build-worker.mjs` embeds assets in an ESM Worker; native hosting provisions `BUCKET`. `scripts/file-bucket.mjs` is the separate single-process local adapter.
+`public/model.js` validates and replays integer Sun allocations; `exports.js` creates CSV; `tree-layout.js` fixes columns/day spacing; `canvas.js` renders; `app.js` controls history, playback and publishing. `worker/index.js` provides public reads and authenticated conditional writes. `scripts/build-worker.mjs` embeds assets in an ESM Worker; native hosting provisions `BUCKET`. `scripts/file-bucket.mjs` is the single-process disk adapter. `server/vercel-app.js` runs the same application API inside Vercel; `server/vercel-bucket.js` connects only to that instance's private Blob store.
 
 Tests cover exact conservation, earlier history, personal peer-to-peer tracing, CSV round trips, fixed columns, password validation, rejected uploads, concurrent conflicts, previous-version retention and persistence across server handlers. Tests use synthetic data and never contact TRON.
 

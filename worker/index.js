@@ -15,12 +15,12 @@ export async function verifyPassword(password,verifier){
   const result=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:unhex(parts[2]),iterations},key,256);
   return equal(new Uint8Array(result),unhex(parts[3]));
 }
-async function readLimited(request){
-  const advertised=Number(request.headers.get('content-length'));if(advertised>MAX_UPLOAD_BYTES)throw new Error('UPLOAD_TOO_LARGE');
+async function readLimited(request,limit=MAX_UPLOAD_BYTES){
+  const advertised=Number(request.headers.get('content-length'));if(advertised>limit)throw new Error('UPLOAD_TOO_LARGE');
   if(!request.body)throw new Error('EMPTY_BODY');
   const reader=request.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});let bytes=0,text='';
   while(true){const chunk=await reader.read();if(chunk.done)break;bytes+=chunk.value.byteLength;
-    if(bytes>MAX_UPLOAD_BYTES){await reader.cancel();throw new Error('UPLOAD_TOO_LARGE');}text+=decoder.decode(chunk.value,{stream:true});}
+    if(bytes>limit){await reader.cancel();throw new Error('UPLOAD_TOO_LARGE');}text+=decoder.decode(chunk.value,{stream:true});}
   return text+decoder.decode();
 }
 /** Validate the complete saved SMART ledger in immutable sequence, rather than
@@ -43,9 +43,12 @@ export function createHandler(assets){
     async fetch(request,env={},ctx={}){
       try{
       const url=new URL(request.url),path=url.pathname;
-      if(path==='/api/status'&&request.method==='GET')return response({publishingEnabled:Boolean(env.BUCKET&&env.FLOW_PUBLISH_AUTH),maxUploadBytes:MAX_UPLOAD_BYTES});
+      const uploadLimit=Number.isSafeInteger(env.MAX_UPLOAD_BYTES)&&env.MAX_UPLOAD_BYTES>0?Math.min(env.MAX_UPLOAD_BYTES,MAX_UPLOAD_BYTES):MAX_UPLOAD_BYTES;
+      const passwordConfigured=/^pbkdf2-sha256:100000:[a-f0-9]{32}:[a-f0-9]{64}$/.test(env.FLOW_PUBLISH_AUTH??'');
+      const setupMessage=env.SETUP_MESSAGE??(!env.BUCKET?'This Flow instance needs its own persistent storage before publishing.':!passwordConfigured?'Set FLOW_PUBLISH_AUTH to the server verifier from flow-atlas-admin.txt. Enter the actual password only in Admin upload.':null);
+      if(path==='/api/status'&&request.method==='GET')return response({publishingEnabled:Boolean(env.BUCKET&&passwordConfigured),maxUploadBytes:uploadLimit,setupMessage});
       if(path==='/api/snapshot'&&['GET','HEAD'].includes(request.method)){
-        if(!env.BUCKET)return response({error:'Persistent snapshot storage is unavailable.'},503);
+        if(!env.BUCKET)return response({dataset:JSON.parse(asset('/dataset.json').body),revision:'demo',publishedAt:null,source:'unconfigured',setupMessage});
         try{
           const object=await env.BUCKET.get(currentKey);
           if(!object){const data=JSON.parse(asset('/dataset.json').body);return response({dataset:data,revision:'demo',publishedAt:null,source:'bundled'});}
@@ -54,7 +57,7 @@ export function createHandler(assets){
         }catch{return response({error:'Cannot read the shared snapshot. Retry shortly.'},503);}
       }
       if(path==='/api/admin/publish'&&['POST','PUT'].includes(request.method)){
-        if(!env.BUCKET||!env.FLOW_PUBLISH_AUTH)return response({error:'Publishing is not configured on this host.'},503);
+        if(!env.BUCKET||!passwordConfigured)return response({error:setupMessage??'Publishing is not configured on this Flow instance.'},503);
         if(request.headers.get('origin')!==url.origin)return response({error:'Publish from the same website.'},403);
         if(!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))return response({error:'Upload a public JSON snapshot.'},415);
         const ip=request.headers.get('cf-connecting-ip')??'shared-client',now=Date.now();
@@ -66,8 +69,8 @@ export function createHandler(assets){
         const expected=request.headers.get('if-match');
         if(expected!=='demo'&&!/^[a-f0-9]{32}$/.test(expected??''))return response({error:'Reload the shared snapshot before publishing.'},428);
         let data;
-        try{data=validateSnapshot(JSON.parse(await readLimited(request)));}
-        catch(e){return response({error:e.message==='UPLOAD_TOO_LARGE'?'JSON exceeds the 12 MB publishing limit.':'Snapshot rejected: '+e.message},e.message==='UPLOAD_TOO_LARGE'?413:422);}
+        try{data=validateSnapshot(JSON.parse(await readLimited(request,uploadLimit)));}
+        catch(e){return response({error:e.message==='UPLOAD_TOO_LARGE'?`JSON exceeds this Flow host’s ${Math.floor(uploadLimit/1_000_000)} MB upload limit.`:'Snapshot rejected: '+e.message},e.message==='UPLOAD_TOO_LARGE'?413:422);}
         try{
           const current=await env.BUCKET.get(currentKey);
           if((current?.etag??'demo')!==expected)return response({error:'The public snapshot changed. Reload before replacing it.'},409);

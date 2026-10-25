@@ -10,6 +10,7 @@ let replay=()=>({before:new Map(),after:new Map(),issue:null}),toastTimer,import
 const colour=address=>{const wallet=state.wallets?.get(address);return wallet?COLOURS[wallet.ordinal%COLOURS.length]:'#8e9ab3';};
 const name=address=>state.wallets?.get(address)?.label??shortAddress(address);
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
+function showConnection(){const message=state.connectionError||state.setupMessage;$('connection-status').textContent=message??'';$('connection-status').hidden=!message;}
 function download(name,blob){const url=URL.createObjectURL(blob),a=element('a');a.download=name;a.href=url;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 function pause(){state.playing=false;$('play-button').textContent='▶';$('play-button').setAttribute('aria-label','Play timeline');}
 function chooseFrame(index){pause();state.index=Math.max(0,Math.min(state.frames.length-1,index));state.selectedTransfer=null;state.elapsed=1;updateFrame();if(state.view==='timeline')canvas.focusFrame(state.index);}
@@ -220,20 +221,23 @@ async function loadShared(){
   $('refresh-data').disabled=true;$('refresh-data').textContent='↻ Loading…';
   // Capability checks do not delay or discard a valid public snapshot.
   readPublicJson('./api/status',{attempts:2,timeout:5000}).then(status=>{if(generation!==importGeneration)return;
-    state.publishingEnabled=status.publishingEnabled===true;$('admin-upload').disabled=!state.publishingEnabled;
+    state.publishingEnabled=status.publishingEnabled===true;state.setupMessage=status.setupMessage??null;
+    if(Number.isSafeInteger(status.maxUploadBytes)&&status.maxUploadBytes>0)state.maxUploadBytes=status.maxUploadBytes;
+    $('admin-upload').disabled=!state.publishingEnabled;showConnection();
   }).catch(()=>{});
   try{
     const body=await readSnapshot();if(generation!==importGeneration)return;
+    if(body.source==='unconfigured'&&state.data&&!state.data.demo)throw Error(body.setupMessage??'This Flow instance needs its own storage configuration. The current view is retained.');
     load(body.dataset,body.publishedAt?'published '+new Date(body.publishedAt).toLocaleString('en-GB',{timeZone:'Europe/Moscow'})+' MSK':'shared demonstration');
-    state.sharedRevision=body.revision;state.sharedReady=true;$('connection-status').hidden=true;
+    state.sharedRevision=body.revision;state.sharedReady=body.source!=='unconfigured';state.setupMessage=body.setupMessage??state.setupMessage;state.connectionError=null;showConnection();
   }catch(error){
     if(generation!==importGeneration)return;
     if(error.status===404){
       const fallback=await readPublicJson('./dataset.json',{attempts:1});if(generation!==importGeneration)return;
       load(fallback,'static read-only snapshot');state.sharedReady=false;$('admin-upload').disabled=true;
-      $('connection-status').textContent='Static read-only copy. Shared publishing is unavailable on this host.';$('connection-status').hidden=false;return;
+      state.setupMessage='Static read-only copy. Shared publishing is unavailable on this host.';state.connectionError=null;showConnection();return;
     }
-    $('connection-status').textContent=error.message;$('connection-status').hidden=false;
+    state.connectionError=error.message;showConnection();
     if(!state.data){$('source-badge').textContent='CONNECTION ERROR';$('subtitle').textContent='The shared history could not be loaded. Use Refresh to retry.';$('frame-summary').textContent='Waiting for a valid shared snapshot.';}
     throw error;
   }finally{if(generation===importGeneration){$('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';}}
@@ -263,11 +267,13 @@ $('publish-form').addEventListener('submit',async e=>{
   $('publish-submit').disabled=true;$('close-publish').disabled=true;$('publish-error').textContent='';
   try{
     if(!state.sharedReady){const current=await readSnapshot();state.sharedRevision=current.revision;state.sharedReady=true;}
+    const maximum=state.maxUploadBytes??12*1024*1024;
+    if(new TextEncoder().encode(JSON.stringify(stagedSnapshot)).byteLength>maximum)throw Error(`This Flow deployment accepts up to ${Math.floor(maximum/1_000_000)} MB of normalized JSON per upload.`);
     const submitted=stagedSnapshot,receipt=await publishSnapshot(submitted,{password:$('publish-password').value,revision:state.sharedRevision});
     ++importGeneration;
     acceptPublishedSnapshot(submitted,receipt,current=>{
       load(current.dataset,'published '+new Date(current.publishedAt).toLocaleString('en-GB',{timeZone:'Europe/Moscow'})+' MSK');
-      state.sharedRevision=current.revision;state.sharedReady=true;state.publishingEnabled=true;$('admin-upload').disabled=false;$('connection-status').hidden=true;$('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';
+      state.sharedRevision=current.revision;state.sharedReady=true;state.publishingEnabled=true;state.setupMessage=null;state.connectionError=null;$('admin-upload').disabled=false;showConnection();$('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';
     });
     $('publish-dialog').close();clearPublish();toast('Published and displayed. Everyone can load this saved snapshot on Refresh.');
   }catch(error){$('publish-error').textContent=error.name==='TimeoutError'||error.name==='TypeError'?'Could not confirm the upload. Refresh public data before trying again.':error.message;

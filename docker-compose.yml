@@ -1,0 +1,17 @@
+services:
+  flow:
+    build: .
+    init: true
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      FLOW_LISTEN_HOST: "0.0.0.0"
+      FLOW_DATA_DIR: /data
+      FLOW_PUBLISH_AUTH: ${FLOW_PUBLISH_AUTH:-}
+      FLOW_PUBLIC_ORIGIN: ${FLOW_PUBLIC_ORIGIN:-}
+    ports:
+      - "${FLOW_WEB_BIND_HOST:-127.0.0.1}:${FLOW_WEB_PORT:-8090}:8090"
+    volumes:
+      - flow-data:/data
+volumes:
+  flow-data:

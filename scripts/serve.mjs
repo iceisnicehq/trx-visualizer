@@ -8,8 +8,8 @@ const port=Number(process.env.PORT??8090),env={BUCKET:fileBucket(process.env.FLO
 const handler=createHandler(assets);
 createServer(async(req,res)=>{
   try{
-    const base=process.env.FLOW_PUBLIC_ORIGIN??'http://localhost:'+port,url=new URL(req.url,base),headers=new Headers();for(const [k,v] of Object.entries(req.headers))if(v)headers.set(k,Array.isArray(v)?v.join(','):v);
+    const base=process.env.FLOW_PUBLIC_ORIGIN||'http://localhost:'+port,url=new URL(req.url,base),headers=new Headers();for(const [k,v] of Object.entries(req.headers))if(v)headers.set(k,Array.isArray(v)?v.join(','):v);
     const request=new Request(url,{method:req.method,headers,...(!['GET','HEAD'].includes(req.method)?{body:req,duplex:'half'}:{})});
     const reply=await handler.fetch(request,env);res.writeHead(reply.status,Object.fromEntries(reply.headers));res.end(Buffer.from(await reply.arrayBuffer()));
   }catch{res.writeHead(500,{'content-type':'text/plain'});res.end('Request failed.');}
-}).listen(port,'127.0.0.1',()=>console.log('Flow Atlas: http://localhost:'+port+' — persistent data in '+(process.env.FLOW_DATA_DIR??'.data')));
+}).listen(port,process.env.FLOW_LISTEN_HOST??'127.0.0.1',()=>console.log('Flow Atlas: http://localhost:'+port+' — persistent data in '+(process.env.FLOW_DATA_DIR??'.data')));

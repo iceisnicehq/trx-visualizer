@@ -44,6 +44,7 @@ export function normaliseDataset(raw){
     return {id,label:string(p.label,'Plan',100),type:p.type==='LEGACY'?'LEGACY':'SMART',status:string(p.status,'EXPORTED',40),
       startedAt:date(p.startedAt),deadlineAt:date(p.deadlineAt),coverage:p.coverage==='PARTIAL'?'PARTIAL':'COMPLETE',
       initial,warnings:Array.isArray(p.warnings)?p.warnings.map(v=>string(v,'',500)).slice(0,30):[],
+      ...(p.ownershipMode?{ownershipMode:p.ownershipMode==='ORIGINAL_STAKES'?'ORIGINAL_STAKES':'PLAN'}:{}),
       ...(recordedInitial?{recordedInitial}:{}),...(p.recordedCoverage?{recordedCoverage:p.recordedCoverage==='PARTIAL'?'PARTIAL':'COMPLETE'}:{}),...(p.continuity?{continuity:string(p.continuity,'',30)}:{}),
       ...(p.provenanceIssue?{provenanceIssue:string(p.provenanceIssue,'',500)}:{})};
   });

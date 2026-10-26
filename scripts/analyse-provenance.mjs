@@ -22,7 +22,7 @@ await write('everyone-continuous.csv',journeyCsv(data,{confirmedOnly:true}));
 for(const w of data.wallets.filter(w=>w.role!=='teacher'))await write('personal-csv/node-'+(w.ordinal+1)+'.csv',journeyCsv(data,{owner:w.address,confirmedOnly:true}));
 if(preview.ready){
   const forecast=structuredClone(data),id='ownership-restoration-preview',base=Math.max(...data.transactions.map(t=>t.sequence),0);
-  forecast.periods.push({id,label:'Ownership return · PREVIEW ONLY',type:'SMART',status:'DRAFT',coverage:'COMPLETE',startedAt:data.createdAt,deadlineAt:null,
+  forecast.periods.push({id,label:'Ownership return · PREVIEW ONLY',type:'SMART',ownershipMode:'ORIGINAL_STAKES',status:'DRAFT',coverage:'COMPLETE',startedAt:data.createdAt,deadlineAt:null,
     initial:preview.positions,recordedInitial:preview.positions,continuity:'CARRIED',warnings:['Unexecuted ownership-return proposal. Dates are illustrative, not an execution schedule. This file cannot send transactions.']});
   forecast.transactions.push(...preview.routes.map((r,i)=>({id:'ownership-preview-'+(i+1),periodId:id,sequence:base+i+1,campaignDay:null,kind:'REBALANCE',status:'DRAFT',
     from:r.from,to:r.to,amountSun:r.amountSun,allocations:r.allocations,recordedAllocations:r.allocations,recordedAttribution:'RECORDED',attribution:'RECORDED',
@@ -40,7 +40,7 @@ const label=a=>data.wallets.find(w=>w.address===a)?.label??a,amount=n=>(n/SUN).t
   '','## Proposed owner-specific return','',`${preview.transactionCount} direct routes move ${amount(preview.foreignSun)} TRX. This minimizes the number of holder-to-original-owner hops per Sun; it is not a claim of globally minimum transaction count.`,
   '',...preview.blocked.map(x=>'BLOCKED: '+x),
   '',preview.instructions,
-  '','Every native wallet may already hold 1 TRX while its attributed ownership is different. Ordinary Rebalance can therefore do nothing. Do not send this list as unannotated FIFO transfers: these packets deliberately select the named original owner’s share. An execution path must persist those owner-specific allocations and match each confirmed receipt to the proposal. Pause the mixer before any separately approved repair; external sends while it is tracking expected balances can cause reconciliation failures.',
+  '','Every native wallet may already hold 1 TRX while its attributed ownership is different. Ordinary Rebalance can therefore do nothing. Do not send this list as unannotated FIFO transfers: these packets deliberately select the named original owner’s share. The release-36 mixer Restore original stakes action recalculates from its own current confirmed DB journal, freezes those owner-specific allocations and uses its existing approval/receipt engine. This file is a preview of the supplied snapshot; never upload it as executable commands. External manual sends while the mixer tracks expected balances can cause reconciliation failures.',
   '','| Step | Sender | Recipient / owner | Exact Sun | TRX |','| ---: | --- | --- | ---: | ---: |',
   ...preview.routes.map(r=>`| ${r.step} | ${label(r.from)} · ${r.from} | ${label(r.to)} · ${r.to} | ${r.amountSun} | ${amount(r.amountSun)} |`),
   '','## Files','',
@@ -48,6 +48,6 @@ const label=a=>data.wallets.find(w=>w.address===a)?.label??a,amount=n=>(n/SUN).t
   '- `restoration-preview.json`: exact routes, full addresses, explicit packet allocations and source anchor. Read-only proposal.',
   '- `restoration-forecast.json`: optional Flow preview with additional DRAFT routes. None of those additional routes has executed. Dates are illustrative.',
   '- `everyone-continuous.csv` and `personal-csv/node-N.csv`: original-stake journeys including decimal legacy transfers. They preserve current ownership across boundaries.',
-  '','The mixer and its database are unchanged. No teacher payout is included. After executing approved corrective transfers, obtain a new complete confirmed export and record their explicit packet allocations before claiming restoration in the report.',''];
+  '','This analysis script does not modify the mixer or its database. No teacher payout is included. Use the protected mixer recovery queue to execute real returns, then download a fresh confirmed JSON/CSV. The included preview and DRAFT forecast do not claim that recovery has already executed.',''];
 await write('READ-ME-FIRST.md',lines.join('\n'));
 console.log(JSON.stringify({complete:data.accounting.complete,transfers:data.transactions.length,framesChecked:frames.length,restorationReady:preview.ready,routes:preview.transactionCount,foreignSun:preview.foreignSun,output:target}));

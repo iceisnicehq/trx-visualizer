@@ -59,9 +59,14 @@ export function continuousDataset(raw){
       if(!issue)for(const [holder,initial] of declared)if(sum(initial)!==sum(stock.get(holder)??[])){
         issue=`Balance mismatch at ${p.label}: its recorded starting balance at ${holder} differs from the preceding history. Original ownership is not reset.`;break;
       }
+      if(!issue&&p.ownershipMode==='ORIGINAL_STAKES')for(const [holder,initial] of declared){
+        const signature=lots=>JSON.stringify(shares(lots).sort((a,b)=>a.ownerAddress.localeCompare(b.ownerAddress)));
+        if(signature(initial)!==signature(stock.get(holder)??[])){issue=`Original-stake restoration baseline differs from the preceding original-owner ledger at ${holder}.`;break;}
+      }
       if(!issue){
         const next=new Map([...stock].map(([holder,lots])=>[holder,copy(lots)]));
         for(const [holder,initial] of declared){const remaining=copy(stock.get(holder)??[]),mapped=[];
+          if(p.ownershipMode==='ORIGINAL_STAKES'){next.set(holder,remaining.map(lot=>({...lot,nominalOwner:lot.ownerAddress})));continue;}
           for(const a of initial)append(mapped,take(remaining,a.amountSun).map(lot=>({...lot,nominalOwner:a.ownerAddress})));
           next.set(holder,mapped);
         }
@@ -83,7 +88,7 @@ export function continuousDataset(raw){
           if(sum(t.allocations)!==t.amountSun)throw Error('The saved plan packet does not cover the entire native amount.');
           for(const a of t.allocations)append(moved,take(source,a.amountSun,a.ownerAddress));
         }
-        movement.allocations=shares(moved);movement.attribution=p.type==='LEGACY'?'FIFO':'BRIDGED_FIFO';
+        movement.allocations=shares(moved);movement.attribution=p.type==='LEGACY'?'FIFO':p.ownershipMode==='ORIGINAL_STAKES'?'RECORDED':'BRIDGED_FIFO';
         append(target,moved);stock.set(t.from,source.filter(a=>a.amountSun));stock.set(t.to,target);
       }catch(error){issue=`Continuous attribution stopped at #${t.sequence}: ${error.message}`;issues.push(issue);period.coverage='PARTIAL';}
       if(issue){movement.allocations=[];movement.attribution='UNKNOWN';}

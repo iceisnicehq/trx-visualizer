@@ -88,3 +88,18 @@ test('omitted recorded history and overlapping periods block continuity even if 
   let d=continuousDataset(raw);strictEqual(d.accounting.complete,false);ok(d.accounting.issues[0].includes('omits'));
   raw=fixture();raw.transactions[2].sequence=6;d=continuousDataset(raw);strictEqual(d.accounting.complete,false);ok(d.accounting.issues.some(x=>x.includes('overlap')));
 });
+test('a frozen original-stake restoration selects the original owner directly, without relabelling lots a second time',()=>{
+  const raw=fixture(),prior=continuousDataset(raw),positions=restorationPreview(prior).positions;
+  raw.periods.push({id:'original-restore',label:'Original restoration',type:'SMART',ownershipMode:'ORIGINAL_STAKES',status:'RESTORED',initial:positions});
+  const routes=restorationPreview(prior).routes;
+  raw.transactions.push(...routes.map((r,i)=>tx(6+i,'original-restore',r.from,r.to,r.amountSun,r.allocations,{kind:'RETURN'})));
+  const d=continuousDataset(raw);strictEqual(d.accounting.complete,true);strictEqual(d.periods.at(-1).ownershipMode,'ORIGINAL_STAKES');
+  const frames=buildFrames(d,{granularity:'transaction'}),end=createReplay(frames)(frames.length-1);strictEqual(end.issue,null);
+  for(const owner of [a,b,c])deepStrictEqual(atOwner(end.after,owner),[{holderAddress:owner,amountSun:SUN}]);
+  strictEqual(restorationPreview(d).transactionCount,0);deepStrictEqual(continuousDataset(recordedDataset(d)),d);
+});
+test('an original-restoration boundary with a false ownership composition is rejected despite equal native balances',()=>{
+  const raw=fixture();raw.periods.push({id:'false-restore',label:'False restoration',type:'SMART',ownershipMode:'ORIGINAL_STAKES',initial:baseline});
+  raw.transactions.push(tx(6,'false-restore',a,b,1,[allocation(a,1)]));
+  const d=continuousDataset(raw);strictEqual(d.accounting.complete,false);ok(d.accounting.issues.some(x=>x.includes('restoration baseline')));
+});

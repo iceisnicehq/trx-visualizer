@@ -1,4 +1,12 @@
-# TRX Flow Atlas · release 35
+# TRX Flow Atlas · release 36
+
+## Original-stake restoration batches · release 36
+
+The independent mixer can now queue an ORIGINAL_STAKES restoration using its own confirmed journal, frozen true initial positions, manual approvals and its existing transaction engine. Flow remains an independent read-only analytics app: there is no server connection or live operation endpoint. Export a fresh public JSON from the mixer and upload it manually to Flow.
+
+New mixer exports already contain corrected CONTINUOUS attribution, with original recorded allocations preserved for comparison. Flow also recognizes ownershipMode: ORIGINAL_STAKES when reconstructing an older recorded view: that boundary must match the preceding original-owner composition exactly, and its return allocations select the original owner directly. This prevents a second relabelling of a restored stake. A mismatched frozen baseline is rejected. Confirmed-only exports contain only actual confirmed returns; a history-plus-queue export retains pending statuses and forecast lines.
+
+The restoration preview in Flow still cannot send transactions. To execute returns, use the mixer's protected Restore original stakes action and its approval queue. After confirmation, re-export and upload the updated JSON. Personal and everyone CSV downloads then include those new confirmed routes. The mixer and Flow can remain on separate servers without knowing each other's addresses.
 
 ## Original ownership across legacy and plan boundaries · release 35
 

@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {BlobNotFoundError} from '@vercel/blob';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {readFile,access} from 'node:fs/promises';
@@ -31,7 +32,8 @@ test('a mounted publishing endpoint handles an authenticated upload despite a re
   const dataset=JSON.parse(await readFile(new URL('public/dataset.json',root),'utf8'));
   const password='TEST-ONLY-ROUTE-PASSWORD',salt='0123456789abcdef0123456789abcdef';
   const verifier='pbkdf2-sha256:100000:'+salt+':'+pbkdf2Sync(password,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
-  const files=new Map(),sdk={
+  const files=new Map(),sdk={BlobNotFoundError,
+    async head(key){if(!files.has(key))throw new BlobNotFoundError();return {etag:'"provider-version"'};},
     async get(key){const value=files.get(key);return value?{statusCode:200,stream:new Response(value).body,blob:{etag:'"provider-version"'}}:null;},
     async put(key,body){files.set(key,body);return {etag:'"provider-version"'};}
   };

@@ -1,7 +1,7 @@
 /** Public reads and password-authenticated publishing never depend on a
  * visitor's ChatGPT cookies. Retry reads only; a lost write reply is uncertain. */
 export class ApiError extends Error{
-  constructor(message,{status=0,retryable=false,uncertain=false}={}){super(message);this.name='ApiError';this.status=status;this.retryable=retryable;this.uncertain=uncertain;}
+  constructor(message,{status=0,retryable=false,uncertain=false,code=null}={}){super(message);this.name='ApiError';this.status=status;this.retryable=retryable;this.uncertain=uncertain;this.code=code;}
 }
 const later=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const isJson=type=>/^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(type??'');
@@ -15,7 +15,7 @@ async function decode(response,path,write=false){
   if(write&&status===404)throw new ApiError(`This Flow deployment is missing its publishing endpoint (${label}). Deploy api/admin/publish.js from the Flow project root; a static-only deployment cannot publish.`,{status});
   if(!isJson(response.headers.get('content-type')))throw new ApiError(`The host returned a page instead of JSON (${label}). ${write?'The upload result is unconfirmed; refresh public data before retrying.':'Retry Refresh. The current view has been retained.'}`,{status,retryable:status===200||status===408||status===429||status>=500,uncertain:write});
   let body;try{body=await response.json();}catch{throw new ApiError(`The host returned incomplete JSON (${label}). ${write?'Refresh public data before retrying the upload.':'Retry Refresh.'}`,{status,retryable:true,uncertain:write});}
-  if(!response.ok)throw new ApiError(typeof body?.error==='string'?`${body.error.slice(0,500)} (${label})`:`The request failed (${label}).`,{status,retryable:status===408||status===429||status>=500,uncertain:write&&status>=500});
+  if(!response.ok)throw new ApiError(typeof body?.error==='string'?`${body.error.slice(0,500)} (${label})`:`The request failed (${label}).`,{status,retryable:status===408||status===429||status>=500,uncertain:write&&status>=500,code:typeof body?.code==='string'?body.code.slice(0,80):null});
   if(!body||typeof body!=='object'||Array.isArray(body))throw new ApiError(`The host returned an invalid API reply (${label}).`,{status,retryable:true,uncertain:write});
   return body;
 }
@@ -49,6 +49,17 @@ export async function publishSnapshot(dataset,{password,revision,fetchImpl=fetch
     const receipt=await decode(response,path,true);acceptPublishedSnapshot(dataset,receipt,()=>{});return receipt;
   }catch(error){
     const failure=error instanceof ApiError?error:new ApiError('Could not confirm the upload. Refresh public data before trying again.',{uncertain:true});
+    if(failure.status===409){
+      try{
+        const current=await readSnapshot({fetchImpl,sleep,attempts:2});
+        if(current.source!=='unconfigured'){
+          if(current.revision!==revision&&Date.parse(current.publishedAt)>=started-5000&&JSON.stringify(current.dataset)===JSON.stringify(dataset))
+            return {ok:true,revision:current.revision,publishedAt:current.publishedAt,recovered:true};
+          failure.currentSnapshot=current;
+          failure.message='The shared snapshot changed. Its latest version has been loaded; your selected file is retained. Review it and click Publish again. (HTTP 409 at /api/admin/publish)';
+        }
+      }catch{/* A conflict never triggers another write or discards the file. */}
+    }
     if(failure.uncertain){
       try{
         const current=await readSnapshot({fetchImpl,sleep,attempts:2});

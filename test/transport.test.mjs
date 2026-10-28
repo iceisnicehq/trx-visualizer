@@ -59,3 +59,20 @@ test('files containing a hosting error page get a file-specific explanation and 
   assert.throws(()=>parseSnapshotFile('{"format":'),/incomplete or invalid/);
   assert.deepEqual(parseSnapshotFile('\uFEFF '+JSON.stringify(dataset)),dataset);
 });
+test('a real upload conflict reloads only the public snapshot, retains the staged file and never repeats the write',async()=>{
+  const calls=[],other={...dataset,title:'Other admin'};
+  await assert.rejects(publishSnapshot(dataset,{revision,password:'TEST-ONLY',sleep,fetchImpl:async(path,options)=>{
+    calls.push(options.method);return options.method==='POST'?json({error:'Another upload completed first.',code:'SNAPSHOT_CHANGED'},409):json({dataset:other,revision:next,publishedAt,source:'published'});
+  }}),error=>error.status===409&&error.code==='SNAPSHOT_CHANGED'&&error.currentSnapshot.dataset.title==='Other admin'&&error.message.includes('selected file is retained'));
+  assert.deepEqual(calls,['POST','GET']);assert.equal(dataset.title,undefined);
+});
+test('a conflict after an already committed identical upload is recovered by reading, without another write',async()=>{
+  const calls=[],receipt=await publishSnapshot(dataset,{revision,password:'TEST-ONLY',sleep,fetchImpl:async(path,options)=>{
+    calls.push(options.method);return options.method==='POST'?json({error:'Another upload completed first.'},409):json({dataset,revision:next,publishedAt:new Date().toISOString(),source:'published'});
+  }});assert.equal(receipt.recovered,true);assert.deepEqual(calls,['POST','GET']);
+});
+test('failed conflict refresh keeps the original conflict and never invents a successful receipt',async()=>{
+  let writes=0;await assert.rejects(publishSnapshot(dataset,{revision,password:'TEST-ONLY',sleep,fetchImpl:async(path,options)=>{
+    if(options.method==='POST'){writes++;return json({error:'Changed'},409);}return html();
+  }}),error=>error.status===409&&!error.currentSnapshot);assert.equal(writes,1);
+});

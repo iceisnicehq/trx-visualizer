@@ -1,4 +1,18 @@
-# TRX Flow Atlas · release 36
+# TRX Flow Atlas · release 37
+
+## Repeated upload conflict repair · release 37
+
+This release fixes a false HTTP 409 that can repeat on every replacement upload. Vercel Blob's download response can have a different ETag from the metadata revision required by a conditional write. Flow now uses the strong ETag from the Blob metadata API, checks that it stays unchanged around an uncached content read, and still writes with an atomic `ifMatch` condition. It never bypasses revision checks or overwrites a competing upload blindly. An unchanged revision that storage refuses is reported as a storage/configuration error, rather than repeatedly claiming another upload won.
+
+**Update your existing Flow deployment:**
+
+1. Replace the Flow project's source with this release, including `server/`, `worker/`, `public/`, `api/`, `package.json` and `package-lock.json`. On Vercel, deploy the folder containing `package.json`, `vercel.json` and `api/`, with build command `npm run build:static` and output directory `public`.
+2. Redeploy the **same Flow project**. Preserve its private Blob store, `BLOB_READ_WRITE_TOKEN` and `FLOW_PUBLISH_AUTH`. For Node/Docker, preserve `FLOW_DATA_DIR` or its persistent volume instead. Do not delete the saved snapshot, reset storage, regenerate the publishing credentials or update the mixer for this fix.
+3. Hard-refresh that Flow website after deployment, select the JSON again and publish using your existing Flow password. Repeatedly refreshing the old release cannot repair the server's storage revision check.
+
+If another administrator genuinely publishes first, Flow reads the latest saved snapshot and retains your selected file. Review the new shared version, re-enter the password and click Publish again to replace it deliberately. It never automatically retries a write. Duplicate submissions from the same dialog are blocked while an upload is running. If a lost upload reply is reconciled against an identical saved file, a read confirms success without another write.
+
+Validation includes 68 automated tests, including the pinned official Vercel SDK against isolated HTTP storage fixtures with deliberately different download and metadata ETags, repeated replacements, a competing writer, private-store visibility failures, and retained data after refused writes. These checks do not access your Vercel account, upload real game data or execute TRON transactions. Your own deployment must still be redeployed to receive the fix.
 
 ## Original-stake restoration batches · release 36
 

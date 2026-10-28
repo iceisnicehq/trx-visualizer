@@ -74,14 +74,21 @@ export function createHandler(assets){
         catch(e){return response({error:e.message==='UPLOAD_TOO_LARGE'?`JSON exceeds this Flow host’s ${Math.floor(uploadLimit/1_000_000)} MB upload limit.`:'Snapshot rejected: '+e.message},e.message==='UPLOAD_TOO_LARGE'?413:422);}
         try{
           const current=await env.BUCKET.get(currentKey);
-          if((current?.etag??'demo')!==expected)return response({error:'The public snapshot changed. Reload before replacing it.'},409);
+          if((current?.etag??'demo')!==expected)return response({error:'The public snapshot changed. Reload before replacing it.',code:'SNAPSHOT_CHANGED'},409);
           if(current)await env.BUCKET.put('flow-atlas/versions/'+current.etag+'.json',await current.text(),{httpMetadata:{contentType:'application/json'}});
           const publishedAt=new Date().toISOString(),saved={publishedAt,dataset:data};
           const condition=new Headers(expected==='demo'?{'If-None-Match':'*'}:{'If-Match':'"'+expected+'"'});
           const stored=await env.BUCKET.put(currentKey,JSON.stringify(saved),{onlyIf:condition,httpMetadata:{contentType:'application/json',cacheControl:'no-store'}});
-          if(!stored)return response({error:'Another upload completed first. Reload before publishing.'},409);
+          if(!stored){
+            const latest=await env.BUCKET.get(currentKey);
+            if((latest?.etag??'demo')===expected)return response({error:'Flow storage refused the write without a visible revision change. The previous snapshot is retained; check this Flow deployment’s private storage configuration.',code:'FLOW_STORAGE_REVISION_MISMATCH'},503);
+            return response({error:'Another upload completed first. Reload before publishing.',code:'SNAPSHOT_CHANGED'},409);
+          }
           return response({ok:true,revision:stored.etag,publishedAt,transactions:data.transactions.length,periods:data.periods.length});
-        }catch{return response({error:'The upload could not be saved. The previous public snapshot is retained; reload to verify.'},503);}
+        }catch(error){
+          if(error?.code==='FLOW_STORAGE_REVISION_MISMATCH')return response({error:error.message,code:error.code},503);
+          return response({error:'The upload could not be saved. The previous public snapshot is retained; reload to verify.'},503);
+        }
       }
       if(path.startsWith('/api/'))return response({error:'Not found.'},404);
       if(!['GET','HEAD'].includes(request.method))return response({error:'Method not allowed.'},405,{'Allow':'GET, HEAD'});

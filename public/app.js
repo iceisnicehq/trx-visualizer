@@ -222,7 +222,7 @@ $('copy-link').addEventListener('click',async()=>{
   try{await navigator.clipboard.writeText(url.href);toast('Shared view link copied. Visitors open the saved public snapshot.');}catch{toast('Copy is unavailable. Your current view is saved in the address bar.');}
   history.replaceState(null,'',url);
 });
-let stagedSnapshot=null,stagedGeneration=0;
+let stagedSnapshot=null,stagedGeneration=0,publishingInProgress=false;
 async function loadShared(){
   const generation=++importGeneration;pause();
   $('refresh-data').disabled=true;$('refresh-data').textContent='↻ Loading…';
@@ -259,6 +259,7 @@ function clearPublish(){
 }
 $('close-publish').addEventListener('click',()=>{$('publish-dialog').close();clearPublish();});
 $('publish-dialog').addEventListener('close',clearPublish);
+$('publish-dialog').addEventListener('cancel',e=>{if(publishingInProgress)e.preventDefault();});
 $('file-input').addEventListener('change',async e=>{
   const generation=++stagedGeneration;stagedSnapshot=null;$('publish-submit').disabled=true;$('publish-error').textContent='';
   try{
@@ -270,7 +271,8 @@ $('file-input').addEventListener('change',async e=>{
   }catch(error){$('publish-error').textContent=error.message;}
 });
 $('publish-form').addEventListener('submit',async e=>{
-  e.preventDefault();if(!stagedSnapshot)return;
+  e.preventDefault();if(!stagedSnapshot||publishingInProgress)return;publishingInProgress=true;
+  $('file-input').disabled=true;
   $('publish-submit').disabled=true;$('close-publish').disabled=true;$('publish-error').textContent='';
   try{
     if(!state.sharedReady){const current=await readSnapshot();state.sharedRevision=current.revision;state.sharedReady=true;}
@@ -283,9 +285,16 @@ $('publish-form').addEventListener('submit',async e=>{
       state.sharedRevision=current.revision;state.sharedReady=true;state.publishingEnabled=true;state.setupMessage=null;state.connectionError=null;$('admin-upload').disabled=false;showConnection();$('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';
     });
     $('publish-dialog').close();clearPublish();toast('Published and displayed. Everyone can load this saved snapshot on Refresh.');
-  }catch(error){$('publish-error').textContent=error.name==='TimeoutError'||error.name==='TypeError'?'Could not confirm the upload. Refresh public data before trying again.':error.message;
+  }catch(error){
+    if(error.currentSnapshot){
+      try{const current=error.currentSnapshot;normaliseDataset(current.dataset);++importGeneration;
+        load(current.dataset,'latest saved snapshot after upload conflict');state.sharedRevision=current.revision;state.sharedReady=true;state.connectionError=null;showConnection();
+        $('refresh-data').disabled=false;$('refresh-data').textContent='↻ Refresh';
+      }catch{/* Preserve the current view if the read cannot be validated. */}
+    }
+    $('publish-error').textContent=error.name==='TimeoutError'||error.name==='TypeError'?'Could not confirm the upload. Refresh public data before trying again.':error.message;
     $('publish-submit').disabled=!stagedSnapshot;
-  }finally{$('publish-password').value='';$('close-publish').disabled=false;}
+  }finally{publishingInProgress=false;$('file-input').disabled=false;$('publish-password').value='';$('close-publish').disabled=false;}
 });
 function saveCsv(owner){
   if(!state.data)return;

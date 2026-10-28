@@ -81,3 +81,11 @@ test('POST publishing has exactly the same password, origin and revision checks 
   const receipt=await saved.json();strictEqual((await handler.fetch(post(),env)).status,409);
   strictEqual((await (await handler.fetch(new Request(origin+'/api/snapshot'),env)).json()).revision,receipt.revision);
 });
+test('a rejected conditional write without a visible revision change reports storage failure instead of repeated false 409s',async()=>{
+  const env={BUCKET:bucket(),FLOW_PUBLISH_AUTH:verifier},handler=createHandler(assets);
+  const first=await (await handler.fetch(publish(),env)).json(),put=env.BUCKET.put.bind(env.BUCKET);
+  env.BUCKET.put=async(key,...args)=>key==='flow-atlas/current.json'?null:put(key,...args);
+  const failed=await handler.fetch(publish({...demo,title:'Cannot persist'},{headers:{'if-match':first.revision}}),env),body=await failed.json();
+  strictEqual(failed.status,503);strictEqual(body.code,'FLOW_STORAGE_REVISION_MISMATCH');
+  strictEqual((await (await handler.fetch(new Request(origin+'/api/snapshot'),env)).json()).revision,first.revision);
+});

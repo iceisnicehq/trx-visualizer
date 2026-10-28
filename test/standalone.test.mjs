@@ -6,13 +6,15 @@ import {createVercelApp,VERCEL_UPLOAD_BYTES} from '../server/vercel-app.js';
 import {vercelBucket} from '../server/vercel-bucket.js';
 import {fileBucket} from '../scripts/file-bucket.mjs';
 import {createHandler} from '../worker/index.js';
-import {BlobError,BlobPreconditionFailedError} from '@vercel/blob';
+import {BlobError,BlobPreconditionFailedError,BlobNotFoundError} from '@vercel/blob';
 const text=await readFile(new URL('../public/dataset.json',import.meta.url),'utf8'),data=JSON.parse(text);
 const password='TEST-ONLY-FLOW-PASSWORD',salt='0123456789abcdef0123456789abcdef';
 const verifier='pbkdf2-sha256:100000:'+salt+':'+pbkdf2Sync(password,Buffer.from(salt,'hex'),100000,32,'sha256').toString('hex');
 function fakeSdk(){
   const files=new Map(),calls=[];let next=0;
-  return {files,calls,BlobError,BlobPreconditionFailedError,async get(key,options){calls.push({kind:'get',key,options});const found=files.get(options.token+':'+key);return found?{statusCode:200,stream:new Response(found.body).body,blob:{etag:found.etag}}:null;},
+  return {files,calls,BlobError,BlobPreconditionFailedError,BlobNotFoundError,
+    async head(key,options){calls.push({kind:'head',key,options});const found=files.get(options.token+':'+key);if(!found)throw new BlobNotFoundError();return {etag:found.etag};},
+    async get(key,options){calls.push({kind:'get',key,options});const found=files.get(options.token+':'+key);return found?{statusCode:200,stream:new Response(found.body).body,blob:{etag:found.etag}}:null;},
     async put(key,body,options){
       calls.push({kind:'put',key,options});const name=options.token+':'+key,current=files.get(name);
       if(current&&!options.allowOverwrite)throw new BlobError('This blob already exists.');
@@ -84,4 +86,47 @@ test('the Node deployment keeps its uploaded history on its own disk after resta
     const fresh=await createHandler(assets).fetch(new Request(origin+'/api/snapshot'),{BUCKET:fileBucket(directory)});
     assert.equal((await fresh.json()).revision,receipt.revision);
   }finally{await rm(directory,{recursive:true,force:true});}
+});
+test('replacement uses the strong Blob API revision when the private download ETag differs, and repeated uploads succeed',async()=>{
+  const sdk=fakeSdk(),handle=app(sdk),get=sdk.get.bind(sdk);
+  sdk.get=async(...args)=>{const result=await get(...args);if(result)result.blob.etag='W/"download-representation"';return result;};
+  let receipt=await publish(handle);assert.equal(receipt.status,200);
+  for(let i=0;i<4;i++){
+    const previous=receipt.body.revision;receipt=await publish(app(sdk),previous,{...data,title:'Replacement '+i});assert.equal(receipt.status,200,JSON.stringify(receipt.body));
+    assert(sdk.files.has('TEST-ONLY-STORAGE:flow-atlas/versions/'+previous+'.json'));
+    assert.equal((await call(app(sdk))).body.revision,receipt.body.revision);
+  }
+  const replacements=sdk.calls.filter(c=>c.kind==='put'&&c.key==='flow-atlas/current.json'&&c.options.ifMatch);
+  assert.equal(replacements.length,4);assert(replacements.every(c=>c.options.ifMatch.startsWith('"provider-etag-')));
+});
+test('a writer arriving between the content and metadata reads is not overwritten',async()=>{
+  const sdk=fakeSdk(),handle=app(sdk),first=await publish(handle),head=sdk.head.bind(sdk);let heads=0;
+  const key='TEST-ONLY-STORAGE:flow-atlas/current.json',other=JSON.stringify({publishedAt:new Date().toISOString(),dataset:{...data,title:'Concurrent admin'}});
+  sdk.head=async(...args)=>{
+    if(args[0]==='flow-atlas/current.json'&&++heads===2)sdk.files.set(key,{body:other,etag:'"concurrent-write"'});
+    return head(...args);
+  };
+  const result=await publish(handle,first.body.revision,{...data,title:'Must not overwrite'});assert.equal(result.status,409);
+  assert.equal(sdk.files.get(key).body,other);
+});
+test('an object visible to metadata but missing from private reads is a configuration failure, not an endless upload conflict',async()=>{
+  const sdk=fakeSdk(),handle=app(sdk);assert.equal((await publish(handle)).status,200);
+  const key='TEST-ONLY-STORAGE:flow-atlas/current.json',before=sdk.files.get(key).body;
+  sdk.get=async()=>null;
+  const result=await publish(handle);assert.equal(result.status,503);assert.equal(result.body.code,'FLOW_STORAGE_REVISION_MISMATCH');assert.match(result.body.error,/private Blob store/);
+  assert.equal(sdk.files.get(key).body,before);
+});
+test('an absent or weak metadata revision fails closed instead of silently issuing an unconditional overwrite',async()=>{
+  for(const etag of [undefined,'','W/"weak"','*']){
+    const sdk=fakeSdk(),handle=app(sdk),first=await publish(handle),key='TEST-ONLY-STORAGE:flow-atlas/current.json',before=sdk.files.get(key).body;
+    sdk.head=async()=>({etag});const result=await publish(handle,first.body.revision,{...data,title:'Rejected'});
+    assert.equal(result.status,503);assert.equal(result.body.code,'FLOW_STORAGE_REVISION_MISMATCH');assert.equal(sdk.files.get(key).body,before);
+    assert.equal(sdk.calls.filter(c=>c.kind==='put'&&c.key==='flow-atlas/current.json').length,1);
+  }
+});
+test('a persistent provider rejection with an unchanged strong revision is reported as a storage failure',async()=>{
+  const sdk=fakeSdk(),handle=app(sdk),first=await publish(handle),put=sdk.put.bind(sdk),key='TEST-ONLY-STORAGE:flow-atlas/current.json',before=sdk.files.get(key).body;
+  sdk.put=async(...args)=>{if(args[0]==='flow-atlas/current.json')throw new BlobPreconditionFailedError();return put(...args);};
+  const result=await publish(handle,first.body.revision,{...data,title:'Rejected'});assert.equal(result.status,503);assert.equal(result.body.code,'FLOW_STORAGE_REVISION_MISMATCH');
+  assert.match(result.body.error,/revision is unchanged/);assert.equal(sdk.files.get(key).body,before);
 });
